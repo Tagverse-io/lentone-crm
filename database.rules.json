@@ -1,0 +1,43 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "orgs": {
+      "$orgId": {
+        ".read": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists()",
+        ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists()",
+        "users": {
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')"
+          }
+        },
+        "leads": { ".indexOn": ["stage", "assignedTo", "updatedAt", "nextFollowUp"] },
+        "clients": { ".indexOn": ["leadId", "email", "updatedAt"] },
+        "contacts": { ".indexOn": ["clientId", "email"] },
+        "followUps": { ".indexOn": ["done", "dueAt", "assignedTo", "leadId", "invoiceId"] },
+        "quotations": { ".indexOn": ["status", "clientId", "updatedAt"] },
+        "invoices": { ".indexOn": ["status", "clientId", "dueDate", "quotationId"] },
+        "payments": { ".indexOn": ["invoiceId", "date"] },
+        "projects": { ".indexOn": ["status", "clientId", "leadId", "deadline"] },
+        "tasks": { ".indexOn": ["status", "assignedTo", "dueDate", "projectId"] },
+        "socialAccounts": { ".indexOn": ["platform"] },
+        "posts": { ".indexOn": ["status", "platform", "scheduledAt"] },
+        "videoProductions": { ".indexOn": ["stage", "dueDate"] },
+        "events": { ".indexOn": ["start", "googleId"] },
+        "notifications": {
+          "$uid": {
+            ".read": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')"
+          }
+        },
+        "automationsLog": { ".indexOn": ["name", "createdAt"] }
+      }
+    },
+    "private": {
+      "$uid": {
+        ".read": false,
+        ".write": false
+      }
+    }
+  }
+}
