@@ -16,6 +16,7 @@ import {
   Briefcase,
   Check as CheckIcon,
   UserPlus,
+  Copy,
 } from 'lucide-react';
 import { ThemeSwitcher } from './theme-switcher';
 import { GlobalSearch } from './global-search';
@@ -249,6 +250,24 @@ export function AppHeader() {
                     <span className="text-xs font-medium mt-1 truncate" title={workspace.name}>
                       {workspace.name}
                     </span>
+                  )}
+                  {workspace?.id && (
+                    <button
+                      type="button"
+                      className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground font-normal hover:text-foreground"
+                      title="Click to copy organization ID"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigator.clipboard?.writeText(workspace.id).then(
+                          () => toast.success('Organization ID copied'),
+                          () => toast.error('Copy failed'),
+                        );
+                      }}
+                    >
+                      <span className="truncate max-w-[150px]">Org ID: {workspace.id}</span>
+                      <Copy size={11} className="shrink-0" />
+                    </button>
                   )}
                 </div>
               </DropdownMenuLabel>

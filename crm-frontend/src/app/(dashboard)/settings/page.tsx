@@ -575,6 +575,27 @@ export default function SettingsPage() {
                   <FieldHelper text="Used for your workspace subdomain" />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label>Organization ID</Label>
+                <div className="flex gap-2">
+                  <Input value={workspace?.id ?? ''} readOnly className="font-mono" aria-label="Organization ID" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (!workspace?.id) return;
+                      navigator.clipboard?.writeText(workspace.id).then(
+                        () => toast.success('Organization ID copied'),
+                        () => toast.error('Copy failed'),
+                      );
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <FieldHelper text="Use this ID for API, MCP and automation calls" />
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Timezone</Label>
