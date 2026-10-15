@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CrudService } from "./services";
+import type { CrudService } from "./backend-crud";
 
 interface CollectionState<T> {
   items: T[];

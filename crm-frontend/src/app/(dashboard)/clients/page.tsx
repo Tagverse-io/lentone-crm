@@ -12,7 +12,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
-import { clientsService } from '@/lib/services';
+import { clientsService } from '@/lib/backend-crud';
 import type { Client } from '@/lib/types';
 import { nowIso } from '@/lib/utils';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';

@@ -12,7 +12,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
-import { videosService } from '@/lib/services';
+import { videosService } from '@/lib/backend-crud';
 import type { VideoProduction, VideoStage } from '@/lib/types';
 import { nowIso } from '@/lib/utils';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';

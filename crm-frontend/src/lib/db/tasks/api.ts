@@ -33,9 +33,9 @@ export type TasksData = {
 };
 
 // --- Refs ---
-const getTasksRef = (companyId: string) => ref(db, `company_tasks/${companyId}`);
-const getTaskItemRef = (companyId: string, taskId: string) => ref(db, `company_tasks/${companyId}/${taskId}`);
-const getTaskColumnsRef = (companyId: string) => ref(db, `company_task_columns/${companyId}`);
+const getTasksRef = (companyId: string) => ref(db, `orgs/${companyId}/tasks`);
+const getTaskItemRef = (companyId: string, taskId: string) => ref(db, `orgs/${companyId}/tasks/${taskId}`);
+const getTaskColumnsRef = (companyId: string) => ref(db, `orgs/${companyId}/taskColumns`);
 
 // --- Subscriptions ---
 export const subscribeToTasksData = (

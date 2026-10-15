@@ -3,6 +3,7 @@ import { db } from "./admin";
 import { logAutomation } from "./log";
 import { notify, type NotifyType } from "./notify";
 import { connectUrl, listGoogleEvents, syncGoogleEvents } from "./google";
+import { EntitySchema, crudList, crudGet, crudCreate, crudUpdate, crudDelete, type EntityName } from "./crud";
 
 // ---------------------------------------------------------------------------
 // MCP tool implementations. Same capabilities as the REST routes, callable
@@ -280,6 +281,48 @@ async function toolNotify(args: unknown, auth: McpAuth): Promise<ToolResult> {
   return { ok: true, data: res };
 }
 
+const CrudBase = z.object({ entity: EntitySchema, orgId: z.string().min(1) });
+
+async function toolCrudList(args: unknown, auth: McpAuth): Promise<ToolResult> {
+  const { entity, orgId } = CrudBase.parse(args);
+  await requireMember(orgId, auth);
+  return { ok: true, data: { items: await crudList(orgId, entity as EntityName) } };
+}
+
+async function toolCrudGet(args: unknown, auth: McpAuth): Promise<ToolResult> {
+  const { entity, orgId, id } = CrudBase.extend({ id: z.string().min(1) }).parse(args);
+  await requireMember(orgId, auth);
+  const item = await crudGet(orgId, entity as EntityName, id);
+  if (!item) return { ok: false, error: "Not found" };
+  return { ok: true, data: { item } };
+}
+
+async function toolCrudCreate(args: unknown, auth: McpAuth): Promise<ToolResult> {
+  const { entity, orgId, data } = CrudBase.extend({ data: z.record(z.string(), z.unknown()) }).parse(args);
+  await requireMember(orgId, auth);
+  try {
+    return { ok: true, data: { item: await crudCreate(orgId, entity as EntityName, data) } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Create failed" };
+  }
+}
+
+async function toolCrudUpdate(args: unknown, auth: McpAuth): Promise<ToolResult> {
+  const { entity, orgId, id, data } = CrudBase.extend({ id: z.string().min(1), data: z.record(z.string(), z.unknown()) }).parse(args);
+  await requireMember(orgId, auth);
+  const item = await crudUpdate(orgId, entity as EntityName, id, data);
+  if (!item) return { ok: false, error: "Not found" };
+  return { ok: true, data: { item } };
+}
+
+async function toolCrudDelete(args: unknown, auth: McpAuth): Promise<ToolResult> {
+  const { entity, orgId, id } = CrudBase.extend({ id: z.string().min(1) }).parse(args);
+  await requireMember(orgId, auth);
+  const deleted = await crudDelete(orgId, entity as EntityName, id);
+  if (!deleted) return { ok: false, error: "Not found" };
+  return { ok: true, data: { deleted: true } };
+}
+
 export interface McpTool {
   name: string;
   description: string;
@@ -306,4 +349,9 @@ export const MCP_TOOLS: McpTool[] = [
   { name: "run_overdue", description: "Mark past-due invoices overdue and create follow-ups (service token only).", inputSchema: obj({}, []), run: (a, auth) => toolOverdue(auth) },
   { name: "run_digest", description: "Send the daily digest (tasks/follow-ups/overdue) to every user (service token only).", inputSchema: obj({}, []), run: (a, auth) => toolDigest(auth) },
   { name: "send_notification", description: "Fan out an in-app notification plus email honouring user prefs.", inputSchema: obj({ orgId: str("Org id"), uid: str("Recipient uid"), type: str("Event type"), title: str("Title (max 200)"), body: str("Body (max 2000)"), link: str("App link, optional"), email: str("Recipient email, optional") }, ["orgId", "uid", "type", "title", "body"]), run: toolNotify },
+  { name: "crud_list", description: "List all records of an entity (leads, clients, contacts, followUps, quotations, invoices, payments, projects, tasks, socialAccounts, posts, videoProductions, events, notifications, users, automationsLog, roles).", inputSchema: obj({ entity: str("Entity name"), orgId: str("Org id") }, ["entity", "orgId"]), run: toolCrudList },
+  { name: "crud_get", description: "Get one record by id.", inputSchema: obj({ entity: str("Entity name"), orgId: str("Org id"), id: str("Record id") }, ["entity", "orgId", "id"]), run: toolCrudGet },
+  { name: "crud_create", description: "Create a record (id/timestamps stamped automatically).", inputSchema: obj({ entity: str("Entity name"), orgId: str("Org id"), data: { type: "object", description: "Field values" } }, ["entity", "orgId", "data"]), run: toolCrudCreate },
+  { name: "crud_update", description: "Update a record by id.", inputSchema: obj({ entity: str("Entity name"), orgId: str("Org id"), id: str("Record id"), data: { type: "object", description: "Fields to update" } }, ["entity", "orgId", "id", "data"]), run: toolCrudUpdate },
+  { name: "crud_delete", description: "Delete a record by id.", inputSchema: obj({ entity: str("Entity name"), orgId: str("Org id"), id: str("Record id") }, ["entity", "orgId", "id"]), run: toolCrudDelete },
 ];

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
-import { postsService } from '@/lib/services';
+import { postsService } from '@/lib/backend-crud';
 import { LoadingState, ErrorState } from '@/components/ui/states';
 
 function monthGrid(year: number, month: number): Date[] {

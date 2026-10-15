@@ -11,8 +11,8 @@ export interface CalendarEvent {
   linkedRecord?: { type: 'project', id: string } | null;
 }
 
-const getCalendarRef = (companyId: string) => ref(db, `calendar_events/${companyId}`);
-const getCalendarItemRef = (companyId: string, eventId: string) => ref(db, `calendar_events/${companyId}/${eventId}`);
+const getCalendarRef = (companyId: string) => ref(db, `orgs/${companyId}/events`);
+const getCalendarItemRef = (companyId: string, eventId: string) => ref(db, `orgs/${companyId}/events/${eventId}`);
 
 export const subscribeToCalendarEvents = (companyId: string, callback: (events: CalendarEvent[]) => void) => {
   const eventsRef = getCalendarRef(companyId);

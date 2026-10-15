@@ -14,7 +14,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
-import { postsService, socialAccountsService } from '@/lib/services';
+import { postsService, socialAccountsService } from '@/lib/backend-crud';
 import type { PostStatus, SocialPlatform } from '@/lib/types';
 import { nowIso, formatDateTime } from '@/lib/utils';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';

@@ -67,17 +67,17 @@ export type ProjectsData = {
 };
 
 // --- Refs ---
-const getProjectsRef = (companyId: string) => ref(db, `projects/${companyId}`);
-const getProjectItemRef = (companyId: string, projectId: string) => ref(db, `projects/${companyId}/${projectId}`);
+const getProjectsRef = (companyId: string) => ref(db, `orgs/${companyId}/projects`);
+const getProjectItemRef = (companyId: string, projectId: string) => ref(db, `orgs/${companyId}/projects/${projectId}`);
 
-const getTasksRef = (companyId: string) => ref(db, `project_tasks/${companyId}`);
-const getTaskItemRef = (companyId: string, taskId: string) => ref(db, `project_tasks/${companyId}/${taskId}`);
+const getTasksRef = (companyId: string) => ref(db, `orgs/${companyId}/projectTasks`);
+const getTaskItemRef = (companyId: string, taskId: string) => ref(db, `orgs/${companyId}/projectTasks/${taskId}`);
 
-const getMembersRef = (companyId: string) => ref(db, `project_members/${companyId}`);
-const getMemberItemRef = (companyId: string, memberId: string) => ref(db, `project_members/${companyId}/${memberId}`);
+const getMembersRef = (companyId: string) => ref(db, `orgs/${companyId}/members`);
+const getMemberItemRef = (companyId: string, memberId: string) => ref(db, `orgs/${companyId}/members/${memberId}`);
 
-const getNotesRef = (companyId: string) => ref(db, `project_notes/${companyId}`);
-const getNoteItemRef = (companyId: string, noteId: string) => ref(db, `project_notes/${companyId}/${noteId}`);
+const getNotesRef = (companyId: string) => ref(db, `orgs/${companyId}/projectNotes`);
+const getNoteItemRef = (companyId: string, noteId: string) => ref(db, `orgs/${companyId}/projectNotes/${noteId}`);
 
 // --- Subscriptions ---
 export const subscribeToProjectsData = (
