@@ -204,31 +204,8 @@ export default function InvoicesPage() {
                           <Pencil size={14} className="mr-2" /> Edit
                         </DropdownMenuItem>
                         {inv.status !== 'paid' && (
-                          <DropdownMenuItem onClick={async () => {
-                            const id = toast.loading('Redirecting to checkout…');
-                            try {
-                              const res = await fetch('/api/payments/checkout', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  invoiceId: inv.id,
-                                  amount: inv.amount,
-                                  currency: inv.currency,
-                                  description: inv.invoice_number,
-                                  workspaceId: inv.workspace_id
-                                })
-                              });
-                              const data = await res.json();
-                              if (data.url) {
-                                window.location.href = data.url;
-                              } else {
-                                throw new Error(data.error);
-                              }
-                            } catch (e: any) {
-                              toast.error(e.message || 'Failed to checkout', { id });
-                            }
-                          }}>
-                            <CreditCard size={14} className="mr-2" /> Pay with Stripe
+                          <DropdownMenuItem onClick={() => toast.info('Online payments are handled by recording a payment under Payments')}>
+                            <CreditCard size={14} className="mr-2" /> Record payment
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onClick={async () => {

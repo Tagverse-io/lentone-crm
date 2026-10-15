@@ -131,12 +131,6 @@ export default function SettingsPage() {
   const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE_SETTINGS);
   const [sessionTimeout, setSessionTimeout] = useState('30');
   const [twoFactor, setTwoFactor] = useState(false);
-  const [setup2faOpen, setSetup2faOpen] = useState(false);
-  const [setup2faStep, setSetup2faStep] = useState(1);
-  const [qrCode, setQrCode] = useState('');
-  const [totpSecret, setTotpSecret] = useState('');
-  const [verifyCode, setVerifyCode] = useState('');
-  const [setupLoading, setSetupLoading] = useState(false);
 
   const [workspaceMembersList, setWorkspaceMembersList] = useState<Array<{id: string, name: string, email: string, role: string}>>([]);
 
@@ -166,38 +160,8 @@ export default function SettingsPage() {
     toast.error('Two-factor enrolment is not enabled on this deployment');
   };
 
-  const handleVerify2fa = async () => {
-    setSetupLoading(true);
-    try {
-      const res = await fetch('/api/auth/2fa/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: verifyCode, secret: totpSecret })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success('Two-Factor Authentication enabled');
-        setTwoFactor(true);
-        markDirty();
-        setSetup2faOpen(false);
-        // We'd ideally save totpSecret to user's profile here
-        // For MVP, we'll store it in localStorage or let the user object handle it
-        if (workspace?.id && user?.id) {
-            import('@/lib/firebase/database').then(({ wsItemRef }) => {
-                import('firebase/database').then(({ update }) => {
-                    const ref = wsItemRef(workspace.id, 'users', user.id);
-                    update(ref, { totp_secret: totpSecret });
-                });
-            });
-        }
-      } else {
-        toast.error('Invalid verification code');
-      }
-    } catch (err) {
-      toast.error('Failed to verify code');
-    }
-    setSetupLoading(false);
-  };
+  // 2FA enrolment removed: no TOTP authenticator in this deployment
+  // (the toggle is stored as a setting only).
 
 
   useEffect(() => {
