@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useMemo, useState } from "react";
-import { useAuth } from "@/lib/auth-context";
-import { useCollection } from "@/lib/use-collection";
-import { postsService } from "@/lib/services";
-import { ErrorState, LoadingState, PageHeader } from "@/components/ui/card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/utils";
+import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/lib/firebase/auth-context';
+import { useCollection } from '@/lib/use-collection';
+import { postsService } from '@/lib/services';
+import { LoadingState, ErrorState } from '@/components/ui/states';
 
 function monthGrid(year: number, month: number): Date[] {
   const first = new Date(year, month, 1);
@@ -20,8 +20,9 @@ function monthGrid(year: number, month: number): Date[] {
   });
 }
 
-export default function ContentCalendarPage(): JSX.Element {
-  const { orgId } = useAuth();
+export default function ContentCalendarPage() {
+  const { workspace } = useAuth();
+  const orgId = workspace?.id ?? null;
   const { items, loading, error, reload } = useCollection(postsService, orgId);
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
@@ -38,36 +39,44 @@ export default function ContentCalendarPage(): JSX.Element {
     return m;
   }, [items]);
 
+  if (!orgId) return <LoadingState label="Loading workspace…" />;
   if (loading) return <LoadingState label="Loading content calendar…" />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
 
-  const title = new Date(year, month, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+  const title = new Date(year, month, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const shift = (delta: number) => {
+    const d = new Date(year, month + delta, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth());
+  };
 
   return (
-    <div>
-      <PageHeader
-        title="Content calendar"
-        subtitle="Scheduled social posts by day."
-        actions={<>
-          <button className="rounded-md border px-3 py-1 text-sm" onClick={() => { const d = new Date(year, month - 1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }}>‹ Prev</button>
-          <button className="rounded-md border px-3 py-1 text-sm" onClick={() => { const d = new Date(year, month + 1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }}>Next ›</button>
-        </>}
-      />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Content calendar</h1>
+          <p className="text-sm text-muted-foreground">Scheduled social posts by day.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => shift(-1)}>‹ Prev</Button>
+          <Button variant="outline" onClick={() => shift(1)}>Next ›</Button>
+        </div>
+      </div>
       <Card>
         <CardHeader><CardTitle>{title} — {items.filter((p) => p.scheduledAt).length} scheduled</CardTitle></CardHeader>
         <CardContent>
           <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => <div key={d} className="py-1">{d}</div>)}
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="py-1">{d}</div>)}
           </div>
           <div className="grid grid-cols-7 gap-1">
             {days.map((d) => {
               const inMonth = d.getMonth() === month;
               const posts = byDay.get(d.toDateString()) ?? [];
               return (
-                <div key={d.toISOString()} className={`min-h-20 rounded border p-1 text-xs ${inMonth ? "" : "opacity-40"}`}>
+                <div key={d.toISOString()} className={`min-h-20 rounded border p-1 text-xs ${inMonth ? '' : 'opacity-40'}`}>
                   <p className="font-medium">{d.getDate()}</p>
                   {posts.map((p) => (
-                    <Badge key={p.id} tone="info" className="mb-1 block truncate">{p.platform} · {formatDate(p.scheduledAt)}</Badge>
+                    <Badge key={p.id} variant="secondary" className="mb-1 block truncate">{p.platform}</Badge>
                   ))}
                 </div>
               );

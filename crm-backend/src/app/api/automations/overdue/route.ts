@@ -23,7 +23,10 @@ export const GET = handle(async (req: NextRequest) => {
   for (const orgId of orgIds) {
     try {
       const invSnap = await database.ref(`/orgs/${orgId}/invoices`).get();
-      const invoices = Object.entries((invSnap.val() ?? {}) as Record<string, { status?: string; dueDate?: string; amountDue?: number; number?: string; clientName?: string; clientId?: string }>);
+      const invoices = Object.entries((invSnap.val() ?? {}) as Record<string, {
+        status?: string; due_date?: string; amount_due?: number;
+        invoice_number?: string; client_name?: string;
+      }>);
       const fuSnap = await database.ref(`/orgs/${orgId}/followUps`).get();
       const existingFu = new Set(Object.values((fuSnap.val() ?? {}) as Record<string, { invoiceId?: string }>).map((f) => f.invoiceId).filter(Boolean));
       const usersSnap = await database.ref(`/orgs/${orgId}/users`).get();
@@ -32,21 +35,21 @@ export const GET = handle(async (req: NextRequest) => {
       let processed = 0;
       for (const [id, inv] of invoices) {
         if (processed >= 25) break; // free-tier safety cap per org per run
-        if ((inv.status === "sent" || inv.status === "partial") && (inv.dueDate ?? "") < today && (inv.amountDue ?? 0) > 0) {
-          await database.ref(`/orgs/${orgId}/invoices/${id}`).update({ status: "overdue", updatedAt: new Date().toISOString() });
+        if ((inv.status === "pending" || inv.status === "partially_paid") && (inv.due_date ?? "") < today && (inv.amount_due ?? 0) > 0) {
+          await database.ref(`/orgs/${orgId}/invoices/${id}`).update({ status: "overdue", updated_at: new Date().toISOString() });
           marked++;
           if (!existingFu.has(id)) {
             const ref = database.ref(`/orgs/${orgId}/followUps`).push();
             await ref.set({
-              id: ref.key, invoiceId: id, title: `Collect overdue ${inv.number ?? id}`,
-              notes: `${inv.clientName ?? ""} owes ${inv.amountDue ?? 0}`, dueAt: new Date().toISOString(),
+              id: ref.key, invoiceId: id, title: `Collect overdue ${inv.invoice_number ?? id}`,
+              notes: `${inv.client_name ?? ""} owes ${inv.amount_due ?? 0}`, dueAt: new Date().toISOString(),
               done: false, createdAt: new Date().toISOString(),
             });
             followUps++;
           }
           for (const [uid, admin] of admins.slice(0, 5)) {
             try {
-              await notify({ orgId, uid, type: "invoice_overdue", title: `Invoice overdue: ${inv.number ?? id}`, body: `${inv.clientName ?? "A client"} — ${inv.amountDue ?? 0} due since ${inv.dueDate}.`, link: "/invoices", email: admin.email });
+              await notify({ orgId, uid, type: "invoice_overdue", title: `Invoice overdue: ${inv.invoice_number ?? id}`, body: `${inv.client_name ?? "A client"} — ${inv.amount_due ?? 0} due since ${inv.due_date}.`, link: "/invoices", email: admin.email });
             } catch {
               // notify() logs internally.
             }

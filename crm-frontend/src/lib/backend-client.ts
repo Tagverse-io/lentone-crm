@@ -3,7 +3,7 @@
 // Calls the privileged backend (crm-backend). Attaches the Firebase ID token.
 // Used for Google OAuth/Calendar, automations and notifications — never for secrets.
 
-import { firebaseAuth } from "./firebase";
+import { getAuthInstance } from "@/lib/firebase/config";
 import { getEnv } from "./env";
 
 export class BackendError extends Error {
@@ -15,7 +15,7 @@ export class BackendError extends Error {
 }
 
 async function idToken(): Promise<string> {
-  const user = firebaseAuth().currentUser;
+  const user = getAuthInstance().currentUser;
   if (!user) throw new Error("Not signed in");
   return user.getIdToken();
 }

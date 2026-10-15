@@ -1,40 +1,60 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-import { brand } from "@/brand.config";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-export function cn(...inputs: ClassValue[]): string {
+export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number | undefined | null): string {
-  const v = typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
+/**
+ * Format a number as currency.
+ * Uses Intl.NumberFormat for accurate locale-based currency symbols and formatting.
+ * Defaults to USD if no currency code is provided.
+ */
+export function formatCurrency(value: number, currencyCode: string = 'USD'): string {
+  if (value === undefined || value === null || isNaN(value)) {
+    return '0.00';
+  }
+  const cleanCode = (currencyCode || 'USD').trim();
+  const symbolToIso: Record<string, string> = {
+    '₹': 'INR',
+    '$': 'USD',
+    '€': 'EUR',
+    '£': 'GBP',
+    '¥': 'JPY',
+    'C$': 'CAD',
+    'A$': 'AUD',
+  };
+  const isoCode = symbolToIso[cleanCode] || cleanCode;
+
   try {
-    return new Intl.NumberFormat(brand.locale, { style: "currency", currency: brand.currency }).format(v);
-  } catch {
-    return `${brand.currency} ${v.toFixed(2)}`;
+    const locale = isoCode === 'INR' ? 'en-IN' : 'en-US';
+    return new Intl.NumberFormat(locale, { 
+      style: 'currency', 
+      currency: isoCode,
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 2 
+    }).format(value);
+  } catch (e) {
+    return `${cleanCode}${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 }
 
-export function formatDate(iso: string | undefined | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(brand.locale, { year: "numeric", month: "short", day: "numeric" });
-}
+/**
+ * Format a date string using a format pattern from settings.
+ */
+export function formatDate(dateStr: string, format?: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
 
-export function formatDateTime(iso: string | undefined | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(brand.locale, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-export function uid(prefix = "id"): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-export function nowIso(): string {
-  return new Date().toISOString();
+  const fmt = format || 'MM/dd/yyyy';
+  const map: Record<string, string> = {
+    'MM/dd/yyyy': d.toLocaleDateString('en-US'),
+    'dd/MM/yyyy': d.toLocaleDateString('en-GB'),
+    'yyyy-MM-dd': d.toISOString().split('T')[0],
+    'dd-MM-yyyy': d.toLocaleDateString('en-GB').replace(/\//g, '-'),
+    'MM-dd-yyyy': d.toLocaleDateString('en-US').replace(/\//g, '-'),
+  };
+  return map[fmt] || d.toLocaleDateString('en-US');
 }
 
 /** Strip undefined values — RTDB rejects them. */
@@ -44,6 +64,21 @@ export function cleanData<T extends object>(data: T): T {
     if (out[k] === undefined) delete out[k];
   }
   return out;
+}
+
+export function uid(prefix = 'id'): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export function formatDateTime(iso: string | undefined | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function totals(items: { quantity: number; unitPrice: number }[], taxRate = 0): { subtotal: number; taxAmount: number; total: number } {

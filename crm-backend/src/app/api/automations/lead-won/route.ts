@@ -12,7 +12,8 @@ export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));
 }
 
-// POST /api/automations/lead-won — Lead → Won: create client + project. Idempotent.
+// POST /api/automations/lead-won — Lead → won: create client + project. Idempotent.
+// Field names match the frontend (bridgebreak) Lead shape.
 export const POST = handle(async (req: NextRequest) => {
   const user = await requireUser(req);
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
@@ -22,10 +23,13 @@ export const POST = handle(async (req: NextRequest) => {
   const database = db();
 
   const leadSnap = await database.ref(`/orgs/${orgId}/leads/${leadId}`).get();
-  const lead = leadSnap.val() as { name?: string; email?: string; phone?: string; company?: string; stage?: string; value?: number; assignedTo?: string } | null;
+  const lead = leadSnap.val() as {
+    name?: string; email?: string; phone?: string; company?: string;
+    status?: string; source?: string; estimated_value?: number; owner_id?: string;
+  } | null;
   if (!lead) return jsonError(req, "Lead not found", 404);
-  if (lead.stage !== "Won") {
-    await logAutomation(orgId, { name: "lead-won", status: "skipped", detail: `lead ${leadId} stage is ${lead.stage}` });
+  if (lead.status !== "won") {
+    await logAutomation(orgId, { name: "lead-won", status: "skipped", detail: `lead ${leadId} status is ${lead.status}` });
     return json(req, { clientId: null, projectId: null, skipped: true });
   }
 
@@ -37,7 +41,8 @@ export const POST = handle(async (req: NextRequest) => {
     const ref = database.ref(`/orgs/${orgId}/clients`).push();
     await ref.set({
       id: ref.key, name: lead.name ?? "", email: lead.email ?? "", phone: lead.phone ?? null,
-      company: lead.company ?? null, source: "lead", leadId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      company: lead.company ?? null, source: lead.source ?? "lead", leadId,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
     clientId = ref.key;
   }
@@ -48,23 +53,26 @@ export const POST = handle(async (req: NextRequest) => {
   if (!projectId) {
     const ref = database.ref(`/orgs/${orgId}/projects`).push();
     await ref.set({
-      id: ref.key, title: `Project for ${lead.name ?? leadId}`, clientId, clientName: lead.name ?? "",
-      status: "not_started", progress: 0, leadId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      id: ref.key, workspace_id: orgId, client_id: clientId, title: `Project for ${lead.name ?? leadId}`,
+      description: `Created automatically from won lead (${lead.company ?? ""})`.trim(),
+      status: "pending", leadId,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
     projectId = ref.key;
   }
 
   await logAutomation(orgId, { name: "lead-won", status: "ok", detail: `lead ${leadId} → client ${clientId}, project ${projectId}` });
 
-  // Notify the assignee (one email max, honours prefs; never crashes automation).
+  // Notify org admins (lead owner_id is a display string, not a uid).
   try {
-    if (lead.assignedTo) {
-      const uSnap = await database.ref(`/orgs/${orgId}/users/${lead.assignedTo}`).get();
-      const u = uSnap.val() as { email?: string } | null;
-      await notify({ orgId, uid: lead.assignedTo, type: "lead_won", title: "Lead won", body: `${lead.name ?? "A lead"} was marked Won. Client and project created.`, link: "/clients", email: u?.email });
+    const usersSnap = await database.ref(`/orgs/${orgId}/users`).get();
+    const users = Object.entries((usersSnap.val() ?? {}) as Record<string, { role?: string; email?: string }>)
+      .filter(([, u]) => u.role === "admin").slice(0, 5);
+    for (const [uid, admin] of users) {
+      await notify({ orgId, uid, type: "lead_won", title: "Lead won", body: `${lead.name ?? "A lead"} was marked Won. Client and project created.`, link: "/clients", email: admin.email });
     }
   } catch {
-    // notify() already logs email failures internally.
+    // notify() logs internally.
   }
 
   return json(req, { clientId, projectId });

@@ -12,7 +12,9 @@ export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));
 }
 
-// POST /api/automations/payment-received — update invoice status + totals. Idempotent.
+// POST /api/automations/payment-received — recompute invoice totals from ALL
+// payments (idempotent under retries) and update status. Field names match the
+// frontend (bridgebreak) Invoice/Payment shapes.
 export const POST = handle(async (req: NextRequest) => {
   const user = await requireUser(req);
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
@@ -21,28 +23,35 @@ export const POST = handle(async (req: NextRequest) => {
   await requireOrgMember(orgId, user.uid);
   const database = db();
 
-  const pSnap = await database.ref(`/orgs/${orgId}/payments/${paymentId}`).get();
-  const payment = pSnap.val() as { invoiceId?: string; amount?: number } | null;
-  if (!payment?.invoiceId) return jsonError(req, "Payment or invoice not found", 404);
+  const resolvePayment = async (pid: string): Promise<{ invoice_id?: string; amount?: number } | null> => {
+    const direct = await database.ref(`/orgs/${orgId}/payments/${pid}`).get();
+    if (direct.exists()) return direct.val() as { invoice_id?: string; amount?: number };
+    // Normalized payments store payment_id but push-key ids; scan as fallback.
+    const all = await database.ref(`/orgs/${orgId}/payments`).get();
+    const list = Object.entries((all.val() ?? {}) as Record<string, { payment_id?: string; invoice_id?: string; amount?: number }>);
+    return list.find(([, p]) => p.payment_id === pid)?.[1] ?? null;
+  };
 
-  const invRef = database.ref(`/orgs/${orgId}/invoices/${payment.invoiceId}`);
+  const payment = await resolvePayment(paymentId);
+  if (!payment?.invoice_id) return jsonError(req, "Payment or invoice not found", 404);
+
+  const invRef = database.ref(`/orgs/${orgId}/invoices/${payment.invoice_id}`);
   const invSnap = await invRef.get();
-  const inv = invSnap.val() as { total?: number; clientName?: string } | null;
+  const inv = invSnap.val() as { amount?: number; client_name?: string } | null;
   if (!inv) return jsonError(req, "Invoice not found", 404);
 
-  // Recompute from ALL payments for this invoice → idempotent under retries/double-posts.
   const allSnap = await database.ref(`/orgs/${orgId}/payments`).get();
-  const all = Object.values((allSnap.val() ?? {}) as Record<string, { invoiceId?: string; amount?: number }>);
-  const paid = all.filter((p) => p.invoiceId === payment.invoiceId).reduce((s, p) => s + (p.amount ?? 0), 0);
-  const total = inv.total ?? 0;
+  const all = Object.values((allSnap.val() ?? {}) as Record<string, { invoice_id?: string; amount?: number }>);
+  const paid = all.filter((p) => p.invoice_id === payment.invoice_id).reduce((s, p) => s + (p.amount ?? 0), 0);
+  const total = inv.amount ?? 0;
   const due = Math.max(0, total - paid);
-  const status = due <= 0 ? "paid" : paid > 0 ? "partial" : "sent";
-  await invRef.update({ amountPaid: paid, amountDue: due, status, updatedAt: new Date().toISOString() });
+  const status = due <= 0 ? "paid" : paid > 0 ? "partially_paid" : "pending";
+  await invRef.update({ amount_paid: paid, amount_due: due, status, updated_at: new Date().toISOString() });
 
-  await logAutomation(orgId, { name: "payment-received", status: "ok", detail: `invoice ${payment.invoiceId} → ${status}, paid ${paid}/${total}` });
+  await logAutomation(orgId, { name: "payment-received", status: "ok", detail: `invoice ${payment.invoice_id} → ${status}, paid ${paid}/${total}` });
 
   try {
-    await notify({ orgId, uid: user.uid, type: "payment_received", title: "Payment received", body: `Payment of ${payment.amount ?? 0} recorded for ${inv.clientName ?? "invoice"}.`, link: "/payments", email: user.email });
+    await notify({ orgId, uid: user.uid, type: "payment_received", title: "Payment received", body: `Payment of ${payment.amount ?? 0} recorded for ${inv.client_name ?? "invoice"}.`, link: "/payments", email: user.email });
   } catch {
     // notify() logs internally.
   }

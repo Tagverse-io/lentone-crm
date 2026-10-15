@@ -23,6 +23,13 @@ interface Prefs {
   mutedTypes?: NotifyType[];
 }
 
+/** Map automation event types onto the frontend header's notification kinds. */
+function toHeaderKind(type: NotifyType): "project" | "payment" | "support" | "meeting" | "system" {
+  if (type === "payment_received" || type === "invoice_created" || type === "invoice_overdue") return "payment";
+  if (type === "digest") return "system";
+  return "project";
+}
+
 /**
  * Writes the in-app notification AND sends the email, honouring per-user prefs.
  * - At most one email per user per event (caller dedupes via idempotency keys).
@@ -40,15 +47,20 @@ export async function notify(input: NotifyInput): Promise<{ inApp: boolean; emai
 
   let inApp = false;
   if (inAppEnabled) {
-    const ref = database.ref(`/orgs/${input.orgId}/notifications/${input.uid}`).push();
+    // Flat shape read by the app header bell: orgs/{orgId}/notifications/{pushId}
+    // with user_id + message fields.
+    const ref = database.ref(`/orgs/${input.orgId}/notifications`).push();
     await ref.set({
       id: ref.key,
-      type: input.type,
+      user_id: input.uid,
+      workspace_id: input.orgId,
+      type: toHeaderKind(input.type),
+      event: input.type,
       title: input.title,
-      body: input.body,
+      message: input.body,
       link: input.link ?? null,
       read: false,
-      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     });
     inApp = true;
   }

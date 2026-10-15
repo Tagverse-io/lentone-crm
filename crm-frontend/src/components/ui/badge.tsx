@@ -1,47 +1,36 @@
-import type { HTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 
-const tones: Record<string, string> = {
-  default: "bg-secondary text-secondary-foreground",
-  primary: "bg-primary text-primary-foreground",
-  success: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100",
-  warning: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100",
-  danger: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100",
-  info: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-100",
-  muted: "bg-muted text-muted-foreground",
-};
+import { cn } from '@/lib/utils';
 
-export function Badge({ className, tone = "default", ...props }: HTMLAttributes<HTMLSpanElement> & { tone?: keyof typeof tones }): JSX.Element {
+const badgeVariants = cva(
+  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  {
+    variants: {
+      variant: {
+        default:
+          'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
+        secondary:
+          'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        destructive:
+          'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
+        outline: 'text-foreground',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+    },
+  }
+);
+
+export interface BadgeProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof badgeVariants> {}
+
+function Badge({ className, variant, ...props }: BadgeProps) {
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold", tones[tone] ?? tones.default, className)} {...props} />
+    <div className={cn(badgeVariants({ variant }), className)} {...props} />
   );
 }
 
-export function stageTone(stage: string): keyof typeof tones {
-  switch (stage) {
-    case "Won":
-    case "paid":
-    case "accepted":
-    case "published":
-    case "done":
-    case "completed":
-      return "success";
-    case "Lost":
-    case "rejected":
-    case "overdue":
-    case "failed":
-    case "cancelled":
-      return "danger";
-    case "Proposal":
-    case "sent":
-    case "scheduled":
-    case "in_progress":
-      return "info";
-    case "Qualified":
-    case "partial":
-    case "review":
-      return "warning";
-    default:
-      return "muted";
-  }
-}
+export { Badge, badgeVariants };

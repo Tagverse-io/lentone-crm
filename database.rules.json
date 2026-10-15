@@ -8,9 +8,11 @@
         ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists()",
         "users": {
           "$uid": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')"
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $uid && (!data.exists() ? newData.child('role').val() === 'member' : (newData.child('role').val() === data.child('role').val() || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin'))"
           }
         },
+        "invites": { ".read": "auth != null", ".indexOn": ["email", "status"] },
         "leads": { ".indexOn": ["stage", "assignedTo", "updatedAt", "nextFollowUp"] },
         "clients": { ".indexOn": ["leadId", "email", "updatedAt"] },
         "contacts": { ".indexOn": ["clientId", "email"] },
@@ -24,12 +26,7 @@
         "posts": { ".indexOn": ["status", "platform", "scheduledAt"] },
         "videoProductions": { ".indexOn": ["stage", "dueDate"] },
         "events": { ".indexOn": ["start", "googleId"] },
-        "notifications": {
-          "$uid": {
-            ".read": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')",
-            ".write": "auth != null && (auth.uid === $uid || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin')"
-          }
-        },
+        "notifications": { ".indexOn": ["user_id", "created_at", "read"] },
         "automationsLog": { ".indexOn": ["name", "createdAt"] }
       }
     },
@@ -37,6 +34,12 @@
       "$uid": {
         ".read": false,
         ".write": false
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
       }
     }
   }

@@ -28,17 +28,17 @@ export const GET = handle(async (req: NextRequest) => {
         database.ref(`/orgs/${orgId}/followUps`).get(),
         database.ref(`/orgs/${orgId}/invoices`).get(),
       ]);
-      const users = Object.entries((usersSnap.val() ?? {}) as Record<string, { email?: string; role?: string }>);
-      const tasks = Object.values((tasksSnap.val() ?? {}) as Record<string, { assignedTo?: string; dueDate?: string; status?: string; title?: string }>);
+      const users = Object.entries((usersSnap.val() ?? {}) as Record<string, { email?: string }>);
+      const tasks = Object.values((tasksSnap.val() ?? {}) as Record<string, { assignee?: string; due_date?: string; status?: string; title?: string }>);
       const fus = Object.values((fuSnap.val() ?? {}) as Record<string, { assignedTo?: string; dueAt?: string; done?: boolean; title?: string }>);
       const overdueCount = Object.values((invSnap.val() ?? {}) as Record<string, { status?: string }>).filter((i) => i.status === "overdue").length;
 
       for (const [uid, u] of users) {
-        const myTasks = tasks.filter((t) => t.assignedTo === uid && t.status !== "done" && (t.dueDate ?? "") <= tomorrow);
+        const myTasks = tasks.filter((t) => t.assignee === uid && t.status !== "done" && (t.due_date ?? "") <= tomorrow);
         const myFus = fus.filter((f) => !f.done && (!f.assignedTo || f.assignedTo === uid) && (f.dueAt ?? "").slice(0, 10) <= today);
         if (myTasks.length === 0 && myFus.length === 0 && overdueCount === 0) continue;
         const lines = [
-          ...myTasks.map((t) => `• Task: ${t.title ?? "(untitled)"} (due ${t.dueDate ?? "?"})`),
+          ...myTasks.map((t) => `• Task: ${t.title ?? "(untitled)"} (due ${t.due_date ?? "?"})`),
           ...myFus.map((f) => `• Follow-up: ${f.title ?? "(untitled)"}`),
           ...(overdueCount > 0 ? [`• ${overdueCount} overdue invoice(s)`] : []),
         ];

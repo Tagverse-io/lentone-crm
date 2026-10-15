@@ -14,7 +14,7 @@ import {
   onValue,
   type Unsubscribe,
 } from "firebase/database";
-import { firebaseDb } from "./firebase";
+import { getDatabaseInstance as firebaseDb } from "@/lib/firebase/config";
 import { cleanData, nowIso } from "./utils";
 import type { EntityKey } from "./types";
 
