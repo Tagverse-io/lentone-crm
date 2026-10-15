@@ -14,8 +14,8 @@ export interface BrandConfig {
   appName: string;
   logo: string;
   favicon: string;
-  /** White-on-transparent logos need inverting in light mode. Set 0 for dark logos. */
-  logoInvertLight: boolean;
+  /** True when the logo art is white (inverts in light mode). False for black art (inverts in dark mode). */
+  logoWhiteArt: boolean;
   primaryColor: string;
   secondaryColor: string;
   font: string;
@@ -40,7 +40,7 @@ export const brand: BrandConfig = {
   appName: env("NEXT_PUBLIC_APP_NAME", "Your CRM"),
   logo: env("NEXT_PUBLIC_LOGO", "/logo.png"),
   favicon: env("NEXT_PUBLIC_FAVICON", "/logo.png"),
-  logoInvertLight: envFlag("NEXT_PUBLIC_LOGO_INVERT", true),
+  logoWhiteArt: envFlag("NEXT_PUBLIC_LOGO_WHITE", false),
   primaryColor: env("NEXT_PUBLIC_PRIMARY_COLOR", "#4f46e5"),
   secondaryColor: env("NEXT_PUBLIC_SECONDARY_COLOR", "#0ea5e9"),
   font: env("NEXT_PUBLIC_FONT", "Inter, system-ui, sans-serif"),
@@ -64,4 +64,9 @@ export function brandCssVars(): Record<string, string> {
     "--brand-secondary": brand.secondaryColor,
     "--brand-font": brand.font,
   };
+}
+
+/** Tailwind filter classes keeping monochrome logo art visible in both themes. */
+export function logoFilterClass(): string {
+  return brand.logoWhiteArt ? "invert dark:invert-0" : "dark:invert";
 }

@@ -9,7 +9,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { brand } from '@/brand.config';
+import { brand, logoFilterClass } from '@/brand.config';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -69,7 +69,7 @@ export default function LoginPage() {
         <div className="text-center space-y-2">
           <div className="flex justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={brand.logo} alt={brand.appName} className={`h-12 w-auto object-contain ${brand.logoInvertLight ? 'invert dark:invert-0' : ''}`} />
+            <img src={brand.logo} alt={brand.appName} className={`h-12 w-auto object-contain ${logoFilterClass()}`} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">{brand.appName}</h1>
           <p className="text-sm text-muted-foreground">Sign in to your workspace</p>

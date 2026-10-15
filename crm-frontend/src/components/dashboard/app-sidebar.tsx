@@ -9,7 +9,7 @@ import { usePermissions } from '@/components/context/permissions-context';
 import { useSidebar } from './sidebar-context';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { brand } from '@/brand.config';
+import { brand, logoFilterClass } from '@/brand.config';
 import {
   Sheet,
   SheetContent,
@@ -151,9 +151,9 @@ function SidebarNav({ collapsed, onToggleGroup, expandedGroups, leadCount, pathn
   const { hasPermission } = usePermissions();
   const { availableWorkspaces, switchWorkspace, workspace } = useAuth();
   const { topItems, groups: navGroups } = getNavConfig(leadCount, hasPermission);
-  // Brand default logo is white-on-transparent: invert it in light mode.
+  // Monochrome brand mark: keep visible in both themes (uploaded logos as-is).
   const logoSrc = companyLogo || brand.logo;
-  const logoFilter = !companyLogo && brand.logoInvertLight ? 'invert dark:invert-0' : '';
+  const logoFilter = companyLogo ? '' : logoFilterClass();
 
   const WorkspaceSelector = () => (
     <DropdownMenu>
@@ -368,7 +368,7 @@ export function AppSidebar() {
           <div className="flex h-16 items-center justify-between px-4 border-b">
             <div className="flex items-center gap-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logoUrl || brand.logo} alt={companyName || brand.appName} className={`w-8 h-8 rounded-lg object-contain ${!logoUrl && brand.logoInvertLight ? 'invert dark:invert-0' : ''}`} />
+              <img src={logoUrl || brand.logo} alt={companyName || brand.appName} className={`w-8 h-8 rounded-lg object-contain ${!logoUrl ? logoFilterClass() : ''}`} />
               <SheetTitle className="font-semibold text-lg tracking-tight">
                 {companyName || 'CRM'}
               </SheetTitle>
