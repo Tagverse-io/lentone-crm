@@ -14,6 +14,8 @@ export interface BrandConfig {
   appName: string;
   logo: string;
   favicon: string;
+  /** White-on-transparent logos need inverting in light mode. Set 0 for dark logos. */
+  logoInvertLight: boolean;
   primaryColor: string;
   secondaryColor: string;
   font: string;
@@ -36,8 +38,9 @@ function envFlag(name: string, fallback: boolean): boolean {
 
 export const brand: BrandConfig = {
   appName: env("NEXT_PUBLIC_APP_NAME", "Your CRM"),
-  logo: env("NEXT_PUBLIC_LOGO", "/logo.svg"),
-  favicon: env("NEXT_PUBLIC_FAVICON", "/favicon.svg"),
+  logo: env("NEXT_PUBLIC_LOGO", "/logo.png"),
+  favicon: env("NEXT_PUBLIC_FAVICON", "/logo.png"),
+  logoInvertLight: envFlag("NEXT_PUBLIC_LOGO_INVERT", true),
   primaryColor: env("NEXT_PUBLIC_PRIMARY_COLOR", "#4f46e5"),
   secondaryColor: env("NEXT_PUBLIC_SECONDARY_COLOR", "#0ea5e9"),
   font: env("NEXT_PUBLIC_FONT", "Inter, system-ui, sans-serif"),

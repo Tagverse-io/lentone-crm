@@ -78,9 +78,8 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-2">
           <div className="flex justify-center">
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">{brand.appName.charAt(0)}</span>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={brand.logo} alt={brand.appName} className={`h-12 w-auto object-contain ${brand.logoInvertLight ? 'invert dark:invert-0' : ''}`} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Create Account</h1>
           <p className="text-sm text-muted-foreground">Start your {brand.appName} journey</p>

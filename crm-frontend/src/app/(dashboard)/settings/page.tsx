@@ -15,7 +15,6 @@ import {
   Download, RotateCcw, AlertTriangle, ExternalLink,
   Globe, Zap, Lock, Mail as MailIcon, Clock, Smartphone, Laptop,
 } from 'lucide-react';
-import { auth } from '@/lib/firebase/config';
 import { ThemeSwitcher } from '@/components/dashboard/theme-switcher';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
@@ -162,31 +161,9 @@ export default function SettingsPage() {
       markDirty();
       return;
     }
-    
-    // Attempt to generate 2FA secret
-    setSetupLoading(true);
-    setSetup2faOpen(true);
-    setSetup2faStep(1);
-    try {
-      const res = await fetch('/api/auth/2fa/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user?.email })
-      });
-      const data = await res.json();
-      if (data.secret && data.qrCode) {
-        setTotpSecret(data.secret);
-        setQrCode(data.qrCode);
-        setSetup2faStep(2);
-      } else {
-        toast.error('Failed to generate 2FA secret');
-        setSetup2faOpen(false);
-      }
-    } catch (err) {
-      toast.error('Failed to generate 2FA secret');
-      setSetup2faOpen(false);
-    }
-    setSetupLoading(false);
+    // TOTP enrolment needs a server authenticator, which this deployment
+    // does not provide — fail fast with a clear message instead of a hang.
+    toast.error('Two-factor enrolment is not enabled on this deployment');
   };
 
   const handleVerify2fa = async () => {
@@ -408,45 +385,68 @@ export default function SettingsPage() {
     setTimeout(() => setCopiedKey(''), 2000);
   }
 
+  /**
+   * Logo upload stores a base64 data URL directly in RTDB settings
+   * (no Firebase Storage / upload API needed). Images are downscaled
+   * to max 512px so settings writes stay small.
+   */
   async function handleLogoUpload(file: File, field: 'logo_url' | 'footer_logo_url') {
     const setLoading = field === 'logo_url' ? setUploadingLogo : setUploadingFooterLogo;
     setLoading(true);
     try {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please choose an image file');
+        return;
+      }
       if (file.size > 5 * 1024 * 1024) {
         toast.error('Logo file too large (max 5MB)');
         return;
       }
-      
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error('Not authenticated');
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('bucket', 'media');
-      formData.append('path', `logos/${Date.now()}_${file.name}`);
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Upload failed');
-      }
-
-      const { url } = await res.json();
-      setBranding((p) => ({ ...p, [field]: url }));
+      const dataUrl = await readAsDataUrl(file);
+      const resized = await downscaleImage(dataUrl, 512);
+      setBranding((p) => ({ ...p, [field]: resized }));
       markDirty();
-      toast.success('Logo uploaded successfully');
-    } catch (e: any) { 
-      toast.error(e.message || 'Failed to upload logo'); 
-    } finally { 
-      setLoading(false); 
+      toast.success('Logo ready — press Save to apply');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to read logo');
+    } finally {
+      setLoading(false);
     }
+  }
+
+  function readAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function downscaleImage(dataUrl: string, maxDim: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        if (scale >= 1) {
+          resolve(dataUrl);
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Could not decode image'));
+      img.src = dataUrl;
+    });
   }
 
   function exportSettings() {
