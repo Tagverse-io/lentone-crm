@@ -10,3 +10,4 @@ crm-frontend/.env*.local
 crm-backend/.env*.local
 .DS_Store
 *.log
+.vercel

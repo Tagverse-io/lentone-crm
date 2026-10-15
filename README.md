@@ -1,6 +1,13 @@
 # tsk-crm — white-labelled CRM (Next.js + Firebase)
 
-Two separately-deployable Next.js (App Router, TypeScript) projects — no PostgreSQL, no Prisma, no custom server:
+Two separately-deployable Next.js (App Router, TypeScript) projects — no PostgreSQL, no Prisma, no custom server.
+**The frontend UI is a faithful port of `bridgebreak`**: full shadcn/ui library,
+dashboard shell (sidebar/header/search/theme), entity dialogs, documents module
+(quote/invoice forms + live preview + PDF), Kanban pipeline, dashboard, CRM,
+sales, projects, calendar and settings pages. Data layer repointed from
+`workspaces/{id}` to org-scoped `/orgs/{orgId}`, auth simplified to a
+single-org model (Google + email/password), legacy direct-email sends removed
+(backend Gmail notifier is the single email path).
 
 | Project | Vercel project | Purpose |
 |---|---|---|
@@ -50,6 +57,7 @@ cd crm-backend && SEED_ADMIN_UID=<uid> SEED_ADMIN_EMAIL=<you@x.com> npm run seed
 ```
 
 Env files: copy `.env.example` → `.env.local` in each project and fill in. `.env.local` is git-ignored. Env vars are Zod-validated at startup — missing/invalid values fail with a clear message.
+`crm-frontend/.npmrc` pins `legacy-peer-deps=true` (React 19 + day-picker v8) — required for Vercel builds too.
 
 ## Deploy (Vercel, Hobby tier)
 
@@ -71,7 +79,8 @@ Env files: copy `.env.example` → `.env.local` in each project and fill in. `.e
 
 ## Manual steps (must do in consoles)
 
-1. Firebase Console → Authentication → enable **Google** provider; add authorized domains (localhost + both Vercel domains).
+1. Firebase Console → Authentication → enable **Google** AND **Email/Password**
+   providers; add authorized domains (localhost + both Vercel domains).
 2. Firebase Console → Project settings → Service accounts → generate private key → fill `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (keep `\n` escaped).
 3. Deploy `database.rules.json` (`firebase deploy --only database`).
 4. Google Cloud Console → OAuth client: authorized JavaScript origins (frontend local + prod) and redirect URIs (`http://localhost:4000/api/google/callback`, `https://<backend>.vercel.app/api/google/callback`); enable **Google Calendar API**; add test users or publish consent screen.
