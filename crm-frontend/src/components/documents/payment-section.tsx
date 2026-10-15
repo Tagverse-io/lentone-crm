@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DocumentPayment } from './types';
 import { formatDocumentCurrency } from './types';
+import { useFmt } from '@/lib/format';
 
 interface PaymentSectionProps {
   payment: DocumentPayment;
@@ -14,6 +15,7 @@ interface PaymentSectionProps {
 }
 
 export function PaymentSection({ payment, onPaymentChange, grandTotal, currency }: PaymentSectionProps) {
+  const fmt = useFmt();
   const overpaid = payment.amount_paid > grandTotal;
   const balanceDue = Math.max(0, Math.round((grandTotal - payment.amount_paid) * 100) / 100);
 
@@ -81,7 +83,7 @@ export function PaymentSection({ payment, onPaymentChange, grandTotal, currency 
         <div className="space-y-2">
           <Label>Balance Due</Label>
           <div className={`h-10 flex items-center text-sm font-semibold border rounded-md px-3 ${overpaid ? 'bg-blue-50 text-blue-700 border-blue-200' : balanceDue > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-            {formatDocumentCurrency(balanceDue, currency)}
+            {formatDocumentCurrency(balanceDue, currency, fmt.fs)}
             {overpaid && <span className="ml-2 text-xs font-normal text-blue-600">overpaid</span>}
           </div>
         </div>

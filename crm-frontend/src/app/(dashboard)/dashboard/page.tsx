@@ -13,7 +13,7 @@ import { getLeads, getInvoices, getActivityLogs, getAutomationRules, getEmailCam
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import type { Lead, Invoice, ActivityLog, AutomationRule, EmailCampaign, TaskItem } from '@/lib/db/types';
-import { formatCurrency } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 
 const statusColors: Record<string, string> = {
   new: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400',
@@ -34,7 +34,7 @@ const priorityColors: Record<string, string> = {
 export default function DashboardPage() {
   const router = useRouter();
   const { workspace, user } = useAuth();
-  const { currency } = useWorkspace();
+  const fmt = useFmt();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
@@ -142,7 +142,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <KpiCard title="Total Leads" value={String(totalLeads)} change={`${totalLeads} total`} trend="up" icon={Users} description="all time" />
         <KpiCard title="Active Deals" value={String(activeDeals)} change={`${activeDeals} in pipeline`} trend="up" icon={DollarSign} description="in progress" />
-        <KpiCard title="Monthly Revenue" value={formatCurrency(monthlyRevenue, currency)} change={`${invoices.filter((i) => i.status === 'paid' && i.created_at >= monthStart).length} paid`} trend={monthlyRevenue > 0 ? 'up' : 'neutral'} icon={TrendingUp} description="this month" />
+        <KpiCard title="Monthly Revenue" value={fmt.money(monthlyRevenue)} change={`${invoices.filter((i) => i.status === 'paid' && i.created_at >= monthStart).length} paid`} trend={monthlyRevenue > 0 ? 'up' : 'neutral'} icon={TrendingUp} description="this month" />
         <KpiCard title="Invoices Overdue" value={String(invoicesOverdue)} change={`${invoicesOverdue} unpaid`} trend={invoicesOverdue > 0 ? 'down' : 'neutral'} icon={Receipt} description="need attention" />
         <KpiCard title="Email Clicked" value={`${emailClicked}%`} change="engagement" trend="up" icon={Mail} description="click rate" />
       </div>
@@ -165,7 +165,7 @@ export default function DashboardPage() {
                       <div key={lead.id} className="p-2 rounded-lg border bg-card hover:shadow-sm transition-shadow cursor-pointer" onClick={() => router.push('/pipeline')}>
                         <p className="text-xs font-medium truncate">{lead.name}</p>
                         <p className="text-[10px] text-muted-foreground truncate">{lead.company || '—'}</p>
-                        <p className="text-[10px] font-medium mt-1">{lead.estimated_value ? formatCurrency(lead.estimated_value, currency) : '—'}</p>
+                        <p className="text-[10px] font-medium mt-1">{lead.estimated_value ? fmt.money(lead.estimated_value) : '—'}</p>
                       </div>
                     ))}
                     {stage.leads.length > 3 && (

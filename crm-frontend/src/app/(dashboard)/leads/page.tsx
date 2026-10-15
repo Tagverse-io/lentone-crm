@@ -55,7 +55,8 @@ import { getLeads, deleteLead } from '@/lib/firebase/database';
 import type { Lead } from '@/lib/db/types';
 import { LeadDialog } from '@/components/dialogs/lead-dialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { cn, formatCurrency } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { toast } from 'sonner';
 
 const statusColors: Record<string, string> = {
@@ -87,7 +88,7 @@ import { usePermissions } from '@/components/context/permissions-context';
 
 export default function LeadsPage() {
   const { workspace, user } = useAuth();
-  const { currency } = useWorkspace();
+  const fmt = useFmt();
   const { hasPermission } = usePermissions();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [search, setSearch] = useState('');
@@ -265,7 +266,7 @@ export default function LeadsPage() {
         />
         <KpiCard
           title="Avg. Est. Value"
-          value={formatCurrency(kpis.avgValue, currency)}
+          value={fmt.money(kpis.avgValue)}
           change={kpis.avgValue >= 10000 ? 'High' : kpis.avgValue >= 1000 ? 'Moderate' : 'Low'}
           trend={kpis.avgValue >= 10000 ? 'up' : kpis.avgValue >= 1000 ? 'neutral' : 'down'}
           icon={TrendingUp}
@@ -523,7 +524,7 @@ export default function LeadsPage() {
                   key: 'value',
                   header: 'Value',
                   render: (lead) => (
-                    <span className="text-sm font-medium">{lead.estimated_value ? formatCurrency(lead.estimated_value, currency) : '—'}</span>
+                    <span className="text-sm font-medium">{lead.estimated_value ? fmt.money(lead.estimated_value) : '—'}</span>
                   ),
                 },
                 {
@@ -621,7 +622,7 @@ export default function LeadsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium">Estimated Value</p>
-                  <p className="text-sm font-medium mt-0.5">{viewingLead.estimated_value ? formatCurrency(viewingLead.estimated_value, currency) : '—'}</p>
+                  <p className="text-sm font-medium mt-0.5">{viewingLead.estimated_value ? fmt.money(viewingLead.estimated_value) : '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium">Owner ID</p>

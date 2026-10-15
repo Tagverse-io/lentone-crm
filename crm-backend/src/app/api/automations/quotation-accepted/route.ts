@@ -4,6 +4,10 @@ import { preflight, json, jsonError } from "@/lib/cors";
 import { handle, requireUser, requireOrgMember } from "@/lib/auth";
 import { db } from "@/lib/admin";
 import { logAutomation } from "@/lib/log";
+import { notify } from "@/lib/notify";
+import { formatMoneyForOrg } from "@/lib/settings";
+import { getOrgSettings } from "@/lib/settings";
+import { nextNumber, dueDateFromSettings } from "@/lib/numbering";
 
 const Body = z.object({ orgId: z.string().min(1), quotationId: z.string().min(1) });
 
@@ -38,16 +42,16 @@ export const POST = handle(async (req: NextRequest) => {
   const invoices = (invoicesSnap.val() ?? {}) as Record<string, { quote_id?: string; id?: string }>;
   let invoiceId = Object.values(invoices).find((i) => i.quote_id === quotationId)?.id ?? null;
   if (!invoiceId) {
+    const s = await getOrgSettings(orgId);
     const total = q.amount ?? 0;
-    const due = new Date();
-    due.setDate(due.getDate() + 14);
     const ref = database.ref(`/orgs/${orgId}/invoices`).push();
     await ref.set({
-      id: ref.key, workspace_id: orgId, invoice_number: `INV-${Date.now().toString(36).toUpperCase()}`,
+      id: ref.key, workspace_id: orgId, invoice_number: await nextNumber(orgId, "invoice"),
       client_id: q.client_id ?? null, client_name: q.client_name ?? null, quote_id: quotationId,
       items: q.items ?? [], subtotal: q.subtotal ?? total, tax_amount: q.tax_amount ?? 0,
-      amount: total, currency: "USD", amount_paid: 0, amount_due: total, status: "pending",
-      issue_date: new Date().toISOString().slice(0, 10), due_date: due.toISOString().slice(0, 10),
+      amount: total, currency: s.general.default_currency, amount_paid: 0, amount_due: total, status: "pending",
+      issue_date: new Date().toISOString().slice(0, 10), due_date: await dueDateFromSettings(orgId),
+      payment_terms: s.branding.default_payment_terms, terms: s.branding.default_terms, notes: s.branding.default_notes,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
     invoiceId = ref.key;
@@ -71,5 +75,18 @@ export const POST = handle(async (req: NextRequest) => {
   }
 
   await logAutomation(orgId, { name: "quotation-accepted", status: "ok", detail: `quotation ${quotationId} → invoice ${invoiceId}${projectId ? `, project ${projectId}` : ""}` });
+
+  try {
+    const money = await formatMoneyForOrg(orgId, q.amount ?? 0);
+    const usersSnap = await database.ref(`/orgs/${orgId}/users`).get();
+    const users = Object.entries((usersSnap.val() ?? {}) as Record<string, { role?: string; email?: string }>)
+      .filter(([, u]) => u.role === "admin").slice(0, 5);
+    for (const [uid, admin] of users) {
+      await notify({ orgId, uid, type: "quotation_accepted", title: "Quotation accepted", body: `${q.client_name ?? "A quotation"} (${money}) was accepted. Invoice ${invoiceId ? "created" : "already exists"}.`, link: "/quotes", email: admin.email });
+    }
+  } catch {
+    // notify() logs internally.
+  }
+
   return json(req, { invoiceId, projectId });
 });

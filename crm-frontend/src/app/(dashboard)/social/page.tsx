@@ -16,13 +16,15 @@ import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
 import { postsService, socialAccountsService } from '@/lib/backend-crud';
 import type { PostStatus, SocialPlatform } from '@/lib/types';
-import { nowIso, formatDateTime } from '@/lib/utils';
+import { nowIso } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';
 
 const PLATFORMS: SocialPlatform[] = ['facebook', 'instagram', 'linkedin', 'x', 'youtube'];
 
 export default function SocialPage() {
   const { workspace } = useAuth();
+  const fmt = useFmt();
   const orgId = workspace?.id ?? null;
   const { items, loading, error, reload } = useCollection(postsService, orgId);
   const accounts = useCollection(socialAccountsService, orgId);
@@ -120,7 +122,7 @@ export default function SocialPage() {
                   <TableRow key={p.id}>
                     <TableCell className="max-w-xs truncate">{p.content}</TableCell>
                     <TableCell>{p.platform}</TableCell>
-                    <TableCell>{p.scheduledAt ? formatDateTime(p.scheduledAt) : '—'}</TableCell>
+                    <TableCell>{p.scheduledAt ? fmt.date(p.scheduledAt) : '—'}</TableCell>
                     <TableCell><Badge variant="secondary">{p.status}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">

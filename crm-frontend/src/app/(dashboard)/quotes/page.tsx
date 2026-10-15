@@ -26,7 +26,7 @@ import { getQuotations, deleteQuotation, convertQuotationToInvoice } from '@/lib
 import type { Quotation } from '@/lib/db/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { generateQuotationPdf, downloadPdf, openPdfPreview } from '@/lib/pdf-engine/generator';
 import { getCompanySettings, preloadLogo } from '@/lib/pdf-engine/helpers';
 import { useAuth } from '@/lib/firebase/auth-context';
@@ -45,6 +45,7 @@ const PAGE_SIZE = 25;
 export default function QuotesPage() {
   const router = useRouter();
   const { workspace, user } = useAuth();
+  const fmt = useFmt();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -183,7 +184,7 @@ export default function QuotesPage() {
                 {
                   key: 'value',
                   header: 'Value',
-                  render: (q) => <span className="text-sm font-medium">{formatCurrency(q.amount)}</span>,
+                  render: (q) => <span className="text-sm font-medium">{fmt.money(q.amount)}</span>,
                 },
                 {
                   key: 'status',
@@ -198,7 +199,7 @@ export default function QuotesPage() {
                   key: 'date',
                   header: 'Date',
                   hideOnMobile: true,
-                  render: (q) => <span className="text-sm text-muted-foreground">{new Date(q.created_at).toLocaleDateString()}</span>,
+                  render: (q) => <span className="text-sm text-muted-foreground">{fmt.date(q.created_at)}</span>,
                 },
                 {
                   key: 'valid',

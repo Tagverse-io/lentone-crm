@@ -3,6 +3,7 @@
 /**
  * Shared types for Quote and Invoice document modules.
  */
+import { formatMoney, formatDateS, type FormatSettings } from '@/lib/format';
 
 export type DocumentTemplate = 'modern' | 'corporate' | 'minimal' | 'creative';
 
@@ -110,16 +111,28 @@ export function calculatePricing(
   };
 }
 
-export function formatDocumentCurrency(amount: number, currency: string = 'INR'): string {
-  const symbols: Record<string, string> = {
-    INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SGD: 'S$',
-  };
-  const symbol = symbols[currency] || currency;
+export function formatDocumentCurrency(amount: number, currency: string = 'INR', fs?: FormatSettings): string {
+  if (fs) {
+    const symbol = symbolForCurrency(currency, fs.symbol);
+    return formatMoney(amount, { ...fs, currency, symbol });
+  }
+  const symbol = symbolForCurrency(currency, currency);
   return `${symbol}${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatDateForDocument(dateStr: string): string {
+function symbolForCurrency(currency: string, fallback: string): string {
+  const symbols: Record<string, string> = {
+    INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SGD: 'S$',
+  };
+  return symbols[currency] || fallback;
+}
+
+export function formatDateForDocument(dateStr: string, fs?: FormatSettings): string {
   if (!dateStr) return '';
+  if (fs) {
+    const out = formatDateS(dateStr, fs);
+    return out === '—' ? '' : out;
+  }
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-IN', {
     day: '2-digit',

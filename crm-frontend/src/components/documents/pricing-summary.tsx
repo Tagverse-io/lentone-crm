@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DocumentPricing } from './types';
 import { formatDocumentCurrency } from './types';
+import { useFmt } from '@/lib/format';
 
 interface PricingSummaryProps {
   pricing: DocumentPricing;
@@ -13,6 +14,7 @@ interface PricingSummaryProps {
 }
 
 export function PricingSummary({ pricing, onPricingChange, currency }: PricingSummaryProps) {
+  const fmt = useFmt();
   return (
     <div className="space-y-4">
       <div>
@@ -40,7 +42,7 @@ export function PricingSummary({ pricing, onPricingChange, currency }: PricingSu
         <div className="space-y-2">
           <Label>Discount Amount</Label>
           <div className="h-10 flex items-center text-sm font-medium border rounded-md px-3 bg-muted">
-            {formatDocumentCurrency(pricing.discount_amount, currency)}
+            {formatDocumentCurrency(pricing.discount_amount, currency, fmt.fs)}
           </div>
         </div>
       </div>
@@ -96,23 +98,23 @@ export function PricingSummary({ pricing, onPricingChange, currency }: PricingSu
       <div className="border-t pt-4 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Subtotal</span>
-          <span className="font-medium">{formatDocumentCurrency(pricing.subtotal, currency)}</span>
+          <span className="font-medium">{formatDocumentCurrency(pricing.subtotal, currency, fmt.fs)}</span>
         </div>
         {pricing.discount_amount > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Discount ({pricing.discount_percent}%)</span>
-            <span className="text-green-600">-{formatDocumentCurrency(pricing.discount_amount, currency)}</span>
+            <span className="text-green-600">-{formatDocumentCurrency(pricing.discount_amount, currency, fmt.fs)}</span>
           </div>
         )}
         {pricing.tax_amount > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Tax</span>
-            <span className="font-medium">{formatDocumentCurrency(pricing.tax_amount, currency)}</span>
+            <span className="font-medium">{formatDocumentCurrency(pricing.tax_amount, currency, fmt.fs)}</span>
           </div>
         )}
         <div className="flex justify-between text-base font-semibold border-t pt-2">
           <span>Grand Total</span>
-          <span>{formatDocumentCurrency(pricing.grand_total, currency)}</span>
+          <span>{formatDocumentCurrency(pricing.grand_total, currency, fmt.fs)}</span>
         </div>
       </div>
     </div>

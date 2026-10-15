@@ -4,6 +4,7 @@ import { handle, requireCron } from "@/lib/auth";
 import { db } from "@/lib/admin";
 import { logAutomation } from "@/lib/log";
 import { notify } from "@/lib/notify";
+import { formatMoneyForOrg } from "@/lib/settings";
 
 export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));
@@ -49,7 +50,8 @@ export const GET = handle(async (req: NextRequest) => {
           }
           for (const [uid, admin] of admins.slice(0, 5)) {
             try {
-              await notify({ orgId, uid, type: "invoice_overdue", title: `Invoice overdue: ${inv.invoice_number ?? id}`, body: `${inv.client_name ?? "A client"} — ${inv.amount_due ?? 0} due since ${inv.due_date}.`, link: "/invoices", email: admin.email });
+              const money = await formatMoneyForOrg(orgId, inv.amount_due ?? 0);
+              await notify({ orgId, uid, type: "invoice_overdue", title: `Invoice overdue: ${inv.invoice_number ?? id}`, body: `${inv.client_name ?? "A client"} — ${money} due since ${inv.due_date}.`, link: "/invoices", email: admin.email });
             } catch {
               // notify() logs internally.
             }

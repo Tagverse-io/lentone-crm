@@ -7,14 +7,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Trash2, Plus, GripVertical } from 'lucide-react';
 import type { DocumentItem } from './types';
 import { calculateItemTotal, formatDocumentCurrency } from './types';
+import { useWorkspace } from '@/lib/settings/workspace-context';
+import { useFmt } from '@/lib/format';
 
 interface ItemsTableProps {
   items: DocumentItem[];
   onItemsChange: (items: DocumentItem[]) => void;
   currency: string;
+  units?: string[];
 }
 
-const UNIT_OPTIONS = [
+const FALLBACK_UNITS = [
   { value: 'pcs', label: 'Pieces' },
   { value: 'hrs', label: 'Hours' },
   { value: 'days', label: 'Days' },
@@ -25,12 +28,15 @@ const UNIT_OPTIONS = [
   { value: 'sets', label: 'Sets' },
   { value: 'boxes', label: 'Boxes' },
   { value: 'lot', label: 'Lot' },
-  { value: 'lot', label: 'Lot' },
   { value: 'flat', label: 'Flat Rate' },
   { value: 'project', label: 'Per Project' },
 ];
 
-export function ItemsTable({ items, onItemsChange, currency }: ItemsTableProps) {
+export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTableProps) {
+  const { settings } = useWorkspace();
+  const unitOptions = units ?? settings?.general?.units ?? FALLBACK_UNITS.map((u) => u.value);
+  const fmt = useFmt();
+  const options = unitOptions.map((u) => ({ value: u, label: u }));
   const addItem = () => {
     onItemsChange([
       ...items,
@@ -124,7 +130,7 @@ export function ItemsTable({ items, onItemsChange, currency }: ItemsTableProps) 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {UNIT_OPTIONS.map((u) => (
+                    {options.map((u) => (
                       <SelectItem key={u.value} value={u.value}>
                         {u.label}
                       </SelectItem>
@@ -146,7 +152,7 @@ export function ItemsTable({ items, onItemsChange, currency }: ItemsTableProps) 
               <div className="col-span-1 space-y-1">
                 {index === 0 && <Label className="text-xs">Total</Label>}
                 <div className="h-8 flex items-center text-sm font-medium">
-                  {formatDocumentCurrency(item.total, currency)}
+                  {formatDocumentCurrency(item.total, currency, fmt.fs)}
                 </div>
               </div>
             </div>

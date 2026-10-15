@@ -25,12 +25,13 @@ import { backend } from '@/lib/backend-client';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DataPagination } from '@/components/ui/data-pagination';
 import { useWorkspace } from '@/lib/settings/workspace-context';
-import { formatCurrency } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 
 export default function PaymentsPage() {
   const PAGE_SIZE = 25;
   const { workspace, user } = useAuth();
   const { currency } = useWorkspace();
+  const fmt = useFmt();
   const workspaceId = workspace?.id || '';
   const [payments, setPayments] = useState<NormalizedPayment[]>([]);
   const [entityMap, setEntityMap] = useState<Record<string, string>>({});
@@ -143,7 +144,7 @@ export default function PaymentsPage() {
   }, [filteredPayments, page]);
 
   const formatAmount = (val: number) => {
-    return formatCurrency(val, currency);
+    return fmt.money(val);
   };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
@@ -307,7 +308,7 @@ export default function PaymentsPage() {
                   </div>
                   <div className="flex items-center justify-between mt-0.5 text-xs text-muted-foreground">
                     <span className="truncate">{txn.invoice_id} &bull; {txn.method}</span>
-                    <span>{new Date(txn.date).toLocaleDateString()}</span>
+                    <span>{fmt.date(txn.date)}</span>
                   </div>
                 </div>
               </div>
@@ -460,7 +461,7 @@ export default function PaymentsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(txn.amount)}</td>
-                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap hidden sm:table-cell">{new Date(txn.date).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap hidden sm:table-cell">{fmt.date(txn.date)}</td>
                   <td className="px-4 py-3 hidden md:table-cell">
                     <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground border">
                       {txn.method}
@@ -576,7 +577,7 @@ export default function PaymentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Amount (₹)</label>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Amount ({fmt.fs.symbol})</label>
                 <input 
                   type="number" 
                   required
@@ -680,7 +681,7 @@ export default function PaymentsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Date</p>
-                  <p className="font-medium">{new Date(viewingPayment.date).toLocaleDateString()}</p>
+                  <p className="font-medium">{fmt.date(viewingPayment.date)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Invoice ID</p>

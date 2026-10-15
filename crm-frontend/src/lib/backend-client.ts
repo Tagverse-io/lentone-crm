@@ -46,4 +46,7 @@ export const backend = {
   // Notifications
   sendNotification: (input: { orgId: string; uid: string; type: string; title: string; body: string; link?: string; email?: string }) =>
     backendFetch<{ ok: boolean }>(`/api/notifications/send`, { method: "POST", body: JSON.stringify(input) }),
+  // Atomic document numbering from Settings (prefix/format + counter).
+  nextNumber: (orgId: string, kind: "invoice" | "quote") =>
+    backendFetch<{ number: string }>(`/api/numbering/next`, { method: "POST", body: JSON.stringify({ orgId, kind }) }),
 };

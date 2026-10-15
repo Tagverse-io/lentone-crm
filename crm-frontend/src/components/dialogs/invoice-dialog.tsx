@@ -23,6 +23,9 @@ import { toast } from 'sonner';
 import { createInvoice, updateInvoice, getProjects } from '@/lib/firebase/database';
 import type { Invoice, InvoiceStatus, Project } from '@/lib/db/types';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { useWorkspace } from '@/lib/settings/workspace-context';
+import { CURRENCIES } from '@/lib/settings/constants';
+import { backend } from '@/lib/backend-client';
 
 interface InvoiceDialogProps {
   open: boolean;
@@ -33,12 +36,14 @@ interface InvoiceDialogProps {
 
 export function InvoiceDialog({ open, onOpenChange, onSaved, invoice }: InvoiceDialogProps) {
   const { workspace, user } = useAuth();
+  const { settings } = useWorkspace();
   const [projects, setProjects] = useState<Project[]>([]);
   const [form, setForm] = useState({
     project_id: '',
     client_id: '',
     invoice_number: '',
     amount: 0,
+    currency: 'USD',
     due_date: '',
     status: 'pending' as InvoiceStatus,
     description: '',
@@ -57,22 +62,33 @@ export function InvoiceDialog({ open, onOpenChange, onSaved, invoice }: InvoiceD
           client_id: invoice.client_id || '',
           invoice_number: invoice.invoice_number,
           amount: invoice.amount,
+          currency: invoice.currency || settings?.general?.default_currency || 'USD',
           due_date: invoice.due_date || '',
           status: invoice.status,
           description: invoice.description || '',
           notes: invoice.notes || '',
         });
       } else {
+        const dueDays = settings?.branding?.invoice_due_days ?? 30;
+        const due = new Date();
+        due.setDate(due.getDate() + dueDays);
         setForm({
           project_id: '',
           client_id: '',
-          invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+          invoice_number: `${settings?.branding?.invoice_prefix || 'INV'}-${Date.now().toString().slice(-6)}`,
           amount: 0,
-          due_date: '',
+          currency: settings?.general?.default_currency || 'USD',
+          due_date: due.toISOString().split('T')[0],
           status: 'pending',
           description: '',
           notes: '',
         });
+        // Reserve the next atomic number from Settings prefix/format (backend).
+        if (workspace?.id) {
+          backend.nextNumber(workspace.id, 'invoice')
+            .then(({ number }) => setForm((prev) => ({ ...prev, invoice_number: number })))
+            .catch(() => undefined);
+        }
       }
     }
   }, [open, invoice, user]);
@@ -130,6 +146,17 @@ export function InvoiceDialog({ open, onOpenChange, onSaved, invoice }: InvoiceD
             <div>
               <Label htmlFor="amount">Amount *</Label>
               <Input id="amount" type="number" min={0} step={0.01} value={form.amount} onChange={(e) => set('amount', parseFloat(e.target.value) || 0)} />
+            </div>
+            <div>
+              <Label htmlFor="currency">Currency</Label>
+              <Select value={form.currency} onValueChange={(v) => set('currency', v)}>
+                <SelectTrigger id="currency"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="status">Status</Label>

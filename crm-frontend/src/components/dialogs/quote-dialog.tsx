@@ -25,6 +25,8 @@ import { toast } from 'sonner';
 import { createQuotation, updateQuotation } from '@/lib/firebase/database';
 import type { Quotation, QuotationStatus, QuotationItem } from '@/lib/db/types';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { useWorkspace } from '@/lib/settings/workspace-context';
+import { CURRENCIES } from '@/lib/settings/constants';
 import { backend } from '@/lib/backend-client';
 
 interface QuoteDialogProps {
@@ -51,10 +53,11 @@ const defaultForm = {
 
 export function QuoteDialog({ open, onOpenChange, onSaved, quote }: QuoteDialogProps) {
   const { workspace, user } = useAuth();
+  const { settings } = useWorkspace();
   const [form, setForm] = useState({
     ...defaultForm,
-    quotation_number: `Q-${Date.now().toString().slice(-6)}`,
-    valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    quotation_number: '',
+    valid_until: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -68,19 +71,27 @@ export function QuoteDialog({ open, onOpenChange, onSaved, quote }: QuoteDialogP
         project_title: quote.project_title || '',
         quotation_number: quote.quotation_number,
         amount: quote.amount,
-        currency: quote.currency,
+        currency: quote.currency || settings?.general?.default_currency || 'USD',
         valid_until: quote.valid_until || '',
         status: quote.status,
         description: quote.description || '',
         notes: quote.notes || '',
         items: quote.items || [],
       });
-    } else {
-      setForm({
-        ...defaultForm,
-        quotation_number: `Q-${Date.now().toString().slice(-6)}`,
-        valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      });
+      return;
+    }
+    const defaults = {
+      ...defaultForm,
+      currency: settings?.general?.default_currency || 'USD',
+      quotation_number: `${settings?.branding?.quote_prefix || 'QTE'}-${Date.now().toString().slice(-6)}`,
+      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    };
+    setForm(defaults);
+    // Reserve the next atomic number from Settings prefix/format (backend).
+    if (workspace?.id) {
+      backend.nextNumber(workspace.id, 'quote')
+        .then(({ number }) => setForm((prev) => ({ ...prev, quotation_number: number })))
+        .catch(() => undefined);
     }
   }, [quote, open]);
 
@@ -195,10 +206,9 @@ export function QuoteDialog({ open, onOpenChange, onSaved, quote }: QuoteDialogP
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                  <SelectItem value="GBP">GBP</SelectItem>
-                  <SelectItem value="NGN">NGN</SelectItem>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

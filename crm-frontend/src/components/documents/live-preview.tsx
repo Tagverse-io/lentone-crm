@@ -1,6 +1,7 @@
 'use client';
 
 import { useWorkspace } from '@/lib/settings/workspace-context';
+import { useFmt } from '@/lib/format';
 import type { DocumentClient, DocumentItem, DocumentPricing, DocumentMeta, DocumentNotes, DocumentPayment, DocumentTemplate } from './types';
 import { formatDocumentCurrency, formatDateForDocument } from './types';
 
@@ -40,6 +41,7 @@ export function LivePreview({
   payment,
 }: LivePreviewProps) {
   const { settings } = useWorkspace();
+  const fmt = useFmt();
   const branding = settings.branding;
 
   const gradient = TEMPLATE_GRADIENTS[template];
@@ -68,12 +70,12 @@ export function LivePreview({
             </div>
             <div className="mt-2 space-y-0.5 text-white/80">
               <div><span className="font-medium text-white">No:</span> {meta.document_number}</div>
-              <div><span className="font-medium text-white">Date:</span> {formatDateForDocument(meta.issue_date)}</div>
+              <div><span className="font-medium text-white">Date:</span> {formatDateForDocument(meta.issue_date, fmt.fs)}</div>
               {docType === 'quote' && meta.valid_until && (
-                <div><span className="font-medium text-white">Valid Until:</span> {formatDateForDocument(meta.valid_until)}</div>
+                <div><span className="font-medium text-white">Valid Until:</span> {formatDateForDocument(meta.valid_until, fmt.fs)}</div>
               )}
               {docType === 'invoice' && meta.due_date && (
-                <div><span className="font-medium text-white">Due Date:</span> {formatDateForDocument(meta.due_date)}</div>
+                <div><span className="font-medium text-white">Due Date:</span> {formatDateForDocument(meta.due_date, fmt.fs)}</div>
               )}
             </div>
           </div>
@@ -114,8 +116,8 @@ export function LivePreview({
                   {item.description && <div className="text-[10px] text-muted-foreground">{item.description}</div>}
                 </td>
                 <td className="py-1.5 text-center">{item.quantity} {item.unit}</td>
-                <td className="py-1.5 text-right">{formatDocumentCurrency(item.unit_price, meta.currency)}</td>
-                <td className="py-1.5 text-right font-medium">{formatDocumentCurrency(item.total, meta.currency)}</td>
+                <td className="py-1.5 text-right">{formatDocumentCurrency(item.unit_price, meta.currency, fmt.fs)}</td>
+                <td className="py-1.5 text-right font-medium">{formatDocumentCurrency(item.total, meta.currency, fmt.fs)}</td>
               </tr>
             ))}
           </tbody>
@@ -128,23 +130,23 @@ export function LivePreview({
           <div className="w-48 space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatDocumentCurrency(pricing.subtotal, meta.currency)}</span>
+              <span>{formatDocumentCurrency(pricing.subtotal, meta.currency, fmt.fs)}</span>
             </div>
             {pricing.discount_amount > 0 && (
               <div className="flex justify-between text-xs text-green-600">
                 <span>Discount ({pricing.discount_percent}%)</span>
-                <span>-{formatDocumentCurrency(pricing.discount_amount, meta.currency)}</span>
+                <span>-{formatDocumentCurrency(pricing.discount_amount, meta.currency, fmt.fs)}</span>
               </div>
             )}
             {pricing.tax_amount > 0 && (
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Tax</span>
-                <span>{formatDocumentCurrency(pricing.tax_amount, meta.currency)}</span>
+                <span>{formatDocumentCurrency(pricing.tax_amount, meta.currency, fmt.fs)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-bold border-t pt-1">
               <span>Grand Total</span>
-              <span>{formatDocumentCurrency(pricing.grand_total, meta.currency)}</span>
+              <span>{formatDocumentCurrency(pricing.grand_total, meta.currency, fmt.fs)}</span>
             </div>
           </div>
         </div>
@@ -158,12 +160,12 @@ export function LivePreview({
             <div className="space-y-0.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Amount Paid</span>
-                <span className="text-green-600 font-medium">{formatDocumentCurrency(payment.amount_paid, meta.currency)}</span>
+                <span className="text-green-600 font-medium">{formatDocumentCurrency(payment.amount_paid, meta.currency, fmt.fs)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Balance Due</span>
                 <span className={`font-semibold ${pricing.grand_total - payment.amount_paid > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {formatDocumentCurrency(Math.max(0, Math.round((pricing.grand_total - payment.amount_paid) * 100) / 100), meta.currency)}
+                  {formatDocumentCurrency(Math.max(0, Math.round((pricing.grand_total - payment.amount_paid) * 100) / 100), meta.currency, fmt.fs)}
                 </span>
               </div>
             </div>

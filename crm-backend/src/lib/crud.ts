@@ -100,17 +100,35 @@ export async function crudGet(orgId: string, entity: EntityName, id: string): Pr
 }
 
 export async function crudCreate(orgId: string, entity: EntityName, data: Record<string, unknown>): Promise<CrudRecord> {
-  assertRequired(entity, data);
+  const input = { ...data };
+  // Settings-driven defaults for documents created via REST/MCP.
+  if (entity === "invoices" || entity === "quotations") {
+    const { getOrgSettings } = await import("./settings");
+    const { nextNumber, dueDateFromSettings } = await import("./numbering");
+    const s = await getOrgSettings(orgId);
+    const numField = entity === "invoices" ? "invoice_number" : "quotation_number";
+    if (!input[numField]) input[numField] = await nextNumber(orgId, entity === "invoices" ? "invoice" : "quote");
+    if (!input.currency) input.currency = s.general.default_currency;
+    if (entity === "invoices") {
+      if (!input.due_date) input.due_date = await dueDateFromSettings(orgId);
+      if (!input.payment_terms) input.payment_terms = s.branding.default_payment_terms;
+      if (!input.terms) input.terms = s.branding.default_terms;
+      if (input.amount_paid === undefined) input.amount_paid = 0;
+      if (input.amount_due === undefined) input.amount_due = (input.amount as number) ?? 0;
+      if (!input.status) input.status = "pending";
+    }
+  }
+  assertRequired(entity, input);
   const database = db();
   if (DEFS[entity].uidKeyed) {
-    const uid = data.uid as string | undefined;
+    const uid = input.uid as string | undefined;
     if (!uid) throw new Error("uid required");
-    const rec = stampNew(entity, uid, { ...data, id: uid }, orgId);
+    const rec = stampNew(entity, uid, { ...input, id: uid }, orgId);
     await database.ref(`/orgs/${orgId}/${entity}/${uid}`).set(rec);
     return rec;
   }
   const ref = database.ref(`/orgs/${orgId}/${entity}`).push();
-  const rec = stampNew(entity, ref.key as string, data, orgId);
+  const rec = stampNew(entity, ref.key as string, input, orgId);
   await ref.set(rec);
   return rec;
 }

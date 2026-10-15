@@ -13,6 +13,7 @@ import { PaymentSection } from './payment-section';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { backend } from '@/lib/backend-client';
 import { createInvoice, updateInvoice } from '@/lib/firebase/database';
 import type { Invoice, InvoiceStatus } from '@/lib/db/types';
 import type {
@@ -37,7 +38,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   const [sending, setSending] = useState(false);
 
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingInvoice?.invoice_number || `INV-${Date.now().toString().slice(-6)}`,
+    document_number: existingInvoice?.invoice_number || `${settings.branding.invoice_prefix || 'INV'}-${Date.now().toString().slice(-6)}`,
     status: existingInvoice?.status || 'draft',
     issue_date: existingInvoice?.issue_date
       ? new Date(existingInvoice.issue_date).toISOString().split('T')[0]
@@ -45,7 +46,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
       ? new Date(existingInvoice.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
     due_date: existingInvoice?.due_date || '',
-    currency: existingInvoice?.currency || settings.general.default_currency || 'INR',
+    currency: existingInvoice?.currency || settings.general.default_currency || 'USD',
   });
 
   const [client, setClient] = useState<DocumentClient>({
@@ -84,7 +85,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
       ? new Date(existingInvoice.paid_at).toISOString().split('T')[0]
       : ''),
     transaction_id: existingInvoice?.transaction_id || '',
-    payment_terms: existingInvoice?.payment_terms || 'net_30',
+    payment_terms: existingInvoice?.payment_terms || settings.branding.default_payment_terms || 'Net 30',
     payment_method: existingInvoice?.payment_method || 'bank_transfer',
     custom_bank_name: existingInvoice?.custom_bank_name || '',
     custom_bank_account: existingInvoice?.custom_bank_account || '',
@@ -115,6 +116,23 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
       balance_due: Math.max(0, Math.round((pricing.grand_total - prev.amount_paid) * 100) / 100),
     }));
   }, [pricing.grand_total, payment.amount_paid]);
+
+  // Reserve the next atomic document number from Settings (new invoices only).
+  useEffect(() => {
+    if (existingInvoice || !workspace?.id) return;
+    backend.nextNumber(workspace.id, 'invoice')
+      .then(({ number }) => setMeta((prev) => ({ ...prev, document_number: number })))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingInvoice?.id, workspace?.id]);
+
+  /** Due date default from Settings invoice_due_days. */
+  function defaultDueDate(): string {
+    const days = settings?.branding?.invoice_due_days ?? 30;
+    const due = new Date();
+    due.setDate(due.getDate() + days);
+    return due.toISOString().split('T')[0];
+  }
 
   const handleSave = useCallback(
     async (status: InvoiceStatus = 'pending') => {
@@ -149,7 +167,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           client_address: client.address,
           client_gstin: client.gstin,
           client_phone: client.phone,
-          currency: meta.currency || 'INR',
+          currency: meta.currency || settings.general.default_currency || 'USD',
           amount: pricing.grand_total,
           subtotal: pricing.subtotal,
           discount_percent: pricing.discount_percent,
@@ -158,7 +176,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           cgst_percent: pricing.cgst_percent,
           sgst_percent: pricing.sgst_percent,
           igst_percent: pricing.igst_percent,
-          due_date: meta.due_date || '',
+          due_date: meta.due_date || defaultDueDate(),
           status: finalStatus,
           description: items[0]?.name || '',
           notes: notes.notes,
@@ -180,6 +198,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
             name: item.name,
             description: item.description,
             quantity: item.quantity,
+            unit: item.unit || 'pcs',
             unit_price: item.unit_price,
             total: item.total,
             tax_rate: 0,

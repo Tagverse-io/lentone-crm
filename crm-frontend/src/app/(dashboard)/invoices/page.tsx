@@ -29,7 +29,7 @@ import type { Invoice } from '@/lib/db/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DataPagination } from '@/components/ui/data-pagination';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { generateInvoicePdf, downloadPdf, openPdfPreview } from '@/lib/pdf-engine/generator';
 import { getCompanySettings, preloadLogo } from '@/lib/pdf-engine/helpers';
 
@@ -45,7 +45,7 @@ const PAGE_SIZE = 25;
 export default function InvoicesPage() {
   const router = useRouter();
   const { workspace, user } = useAuth();
-  const { currency } = useWorkspace();
+  const fmt = useFmt();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -165,7 +165,7 @@ export default function InvoicesPage() {
                 {
                   key: 'amount',
                   header: 'Amount',
-                  render: (inv) => <span className="text-sm font-medium">{formatCurrency(inv.amount, currency)}</span>,
+                  render: (inv) => <span className="text-sm font-medium">{fmt.money(inv.amount)}</span>,
                 },
                 {
                   key: 'status',
@@ -180,13 +180,13 @@ export default function InvoicesPage() {
                   key: 'due',
                   header: 'Due Date',
                   hideOnMobile: true,
-                  render: (inv) => <span className="text-sm text-muted-foreground">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '—'}</span>,
+                  render: (inv) => <span className="text-sm text-muted-foreground">{inv.due_date ? fmt.date(inv.due_date) : '—'}</span>,
                 },
                 {
                   key: 'date',
                   header: 'Date',
                   hideOnMobile: true,
-                  render: (inv) => <span className="text-sm text-muted-foreground">{new Date(inv.created_at).toLocaleDateString()}</span>,
+                  render: (inv) => <span className="text-sm text-muted-foreground">{fmt.date(inv.created_at)}</span>,
                 },
                 {
                   key: 'actions',

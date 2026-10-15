@@ -14,13 +14,15 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useCollection } from '@/lib/use-collection';
 import { followUpsService } from '@/lib/backend-crud';
-import { nowIso, formatDateTime } from '@/lib/utils';
+import { nowIso } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';
 
 const EMPTY = { title: '', notes: '', dueAt: '', assignedTo: '' };
 
 export default function FollowUpsPage() {
   const { workspace } = useAuth();
+  const fmt = useFmt();
   const orgId = workspace?.id ?? null;
   const { items, loading, error, reload } = useCollection(followUpsService, orgId);
   const [open, setOpen] = useState(false);
@@ -89,7 +91,7 @@ export default function FollowUpsPage() {
                   return (
                     <TableRow key={f.id}>
                       <TableCell><p className="font-medium">{f.title}</p><p className="text-xs text-muted-foreground">{f.notes ?? ''}</p></TableCell>
-                      <TableCell>{formatDateTime(f.dueAt)}</TableCell>
+                      <TableCell>{fmt.date(f.dueAt)}</TableCell>
                       <TableCell>
                         <Badge variant={f.done ? 'default' : overdue ? 'destructive' : 'secondary'}>
                           {f.done ? 'Done' : overdue ? 'Overdue' : 'Pending'}

@@ -5,6 +5,7 @@ import { handle, requireUser, requireOrgMember } from "@/lib/auth";
 import { db } from "@/lib/admin";
 import { logAutomation } from "@/lib/log";
 import { notify } from "@/lib/notify";
+import { formatMoneyForOrg } from "@/lib/settings";
 
 const Body = z.object({ orgId: z.string().min(1), paymentId: z.string().min(1) });
 
@@ -51,7 +52,8 @@ export const POST = handle(async (req: NextRequest) => {
   await logAutomation(orgId, { name: "payment-received", status: "ok", detail: `invoice ${payment.invoice_id} → ${status}, paid ${paid}/${total}` });
 
   try {
-    await notify({ orgId, uid: user.uid, type: "payment_received", title: "Payment received", body: `Payment of ${payment.amount ?? 0} recorded for ${inv.client_name ?? "invoice"}.`, link: "/payments", email: user.email });
+    const money = await formatMoneyForOrg(orgId, payment.amount ?? 0);
+    await notify({ orgId, uid: user.uid, type: "payment_received", title: "Payment received", body: `Payment of ${money} recorded for ${inv.client_name ?? "invoice"}.`, link: "/payments", email: user.email });
   } catch {
     // notify() logs internally.
   }

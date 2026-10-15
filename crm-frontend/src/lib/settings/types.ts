@@ -11,11 +11,14 @@ export interface GeneralSettings {
   timezone: string;
   default_currency: string;
   currency_symbol: string;
+  currency_position: 'before' | 'after';
+  currency_decimals: number;
   country: string;
   state: string;
   number_format: string;
   first_day_of_week: string;
   financial_year: string;
+  units: string[];
 }
 
 // ─── Branding Settings ──────────────────────────────────────────────
@@ -58,6 +61,7 @@ export interface BrandingSettings {
   invoice_number_format: string;
   quote_number_format: string;
   invoice_due_days: number;
+  default_payment_terms: string;
   date_format: string;
   default_terms: string;
   default_notes: string;
@@ -163,11 +167,14 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   timezone: 'UTC',
   default_currency: 'USD',
   currency_symbol: '$',
+  currency_position: 'before',
+  currency_decimals: 2,
   country: '',
   state: '',
-  number_format: '1,234,567.89',
-  first_day_of_week: 'Monday',
-  financial_year: 'January - December',
+  number_format: '1,234.56',
+  first_day_of_week: 'monday',
+  financial_year: 'jan-dec',
+  units: ['pcs', 'hrs', 'days', 'kg', 'box', 'lot'],
 };
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
@@ -203,6 +210,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   invoice_number_format: '{prefix}-{year}-{num}',
   quote_number_format: '{prefix}-{year}-{num}',
   invoice_due_days: 30,
+  default_payment_terms: 'Net 30',
   date_format: 'MM/dd/yyyy',
   default_terms: '',
   default_notes: '',

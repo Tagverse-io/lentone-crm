@@ -27,6 +27,9 @@ export interface CompanySettings {
 
   default_currency: string;
   currency_symbol: string;
+  currency_position: 'before' | 'after';
+  currency_decimals: number;
+  number_format: string;
   date_format: string;
   timezone: string;
 

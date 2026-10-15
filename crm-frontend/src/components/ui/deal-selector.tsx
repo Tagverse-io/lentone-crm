@@ -18,6 +18,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Deal } from '@/lib/db/types';
+import { useFmt } from '@/lib/format';
 import { getDeals, getCompanyDeals, searchDeals } from '@/lib/db/deals/api';
 import { useAuth } from '@/lib/firebase/auth-context';
 
@@ -48,6 +49,7 @@ export function DealSelector({
   const [search, setSearch] = React.useState('');
   const { workspace } = useAuth();
   const workspaceId = workspace?.id;
+  const fmt = useFmt();
 
   React.useEffect(() => {
     if (!workspaceId) return;
@@ -78,12 +80,7 @@ export function DealSelector({
 
   const selectedDeal = deals.find(d => d.deal_id === value);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number) => fmt.money(amount);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -18,6 +18,7 @@ import { backend } from '@/lib/backend-client';
 import { subscribeToCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, CalendarEvent as DBCalendarEvent } from '@/lib/db/calendar/api';
 import { Member, Project, subscribeToProjectsData, createMember } from '@/lib/db/projects/api';
 import { toast } from 'sonner';
+import { useFmt } from '@/lib/format';
 
 export type CalendarEvent = DBCalendarEvent;
 
@@ -25,6 +26,7 @@ const EVENT_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#e
 
 export default function CalendarAgendaPage() {
   const { workspace, user } = useAuth();
+  const fmt = useFmt();
   const [view, setView] = useState<'Month'>('Month');
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -301,7 +303,7 @@ export default function CalendarAgendaPage() {
           <Card>
             <CardHeader className="p-4 border-b">
               <CardTitle className="text-xs font-semibold uppercase tracking-wider">Selected Day</CardTitle>
-              <p className="text-xs text-muted-foreground">{new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-xs text-muted-foreground">{fmt.date(selectedDate)}</p>
             </CardHeader>
             <CardContent className="p-0 divide-y">
               {selectedDayEvents.length === 0 && (
@@ -328,7 +330,7 @@ export default function CalendarAgendaPage() {
                   <div key={`${e.id}-up`} className="p-3 flex items-center gap-3 hover:bg-muted/30 cursor-pointer" onClick={() => setViewingEvent(e)}>
                     <div className="w-1 h-8 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
                     <div className="flex flex-col flex-1 min-w-0">
-                      <p className="text-xs text-muted-foreground">{new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                      <p className="text-xs text-muted-foreground">{fmt.date(e.date)}</p>
                       <p className="text-sm font-medium truncate">{e.title}</p>
                       <p className="text-[10px] text-muted-foreground">{e.time}</p>
                     </div>
@@ -356,7 +358,7 @@ export default function CalendarAgendaPage() {
               <div className="space-y-3 py-2">
                 <div className="flex items-center gap-3 text-sm">
                   <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                  <span>{new Date(viewingEvent.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                  <span>{fmt.date(viewingEvent.date)}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <Clock className="h-4 w-4 text-muted-foreground" />

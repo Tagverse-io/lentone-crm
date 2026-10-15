@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import type { DocumentMeta } from './types';
+import { CURRENCIES } from '@/lib/settings/constants';
 
 interface DocumentHeaderProps {
   meta: DocumentMeta;
@@ -127,12 +128,9 @@ export function DocumentHeader({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="INR">INR (₹)</SelectItem>
-              <SelectItem value="USD">USD ($)</SelectItem>
-              <SelectItem value="EUR">EUR (€)</SelectItem>
-              <SelectItem value="GBP">GBP (£)</SelectItem>
-              <SelectItem value="AED">AED (د.إ)</SelectItem>
-              <SelectItem value="SGD">SGD (S$)</SelectItem>
+              {CURRENCIES.map((c) => (
+                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

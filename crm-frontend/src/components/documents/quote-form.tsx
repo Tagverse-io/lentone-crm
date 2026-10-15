@@ -12,6 +12,7 @@ import { PricingSummary } from './pricing-summary';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { backend } from '@/lib/backend-client';
 import { createQuotation, updateQuotation } from '@/lib/firebase/database';
 import type { Quotation, QuotationStatus } from '@/lib/db/types';
 import type {
@@ -36,7 +37,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
   // Form state
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingQuote?.quotation_number || `QTE-${Date.now().toString().slice(-6)}`,
+    document_number: existingQuote?.quotation_number || `${settings.branding.quote_prefix || 'QTE'}-${Date.now().toString().slice(-6)}`,
     status: existingQuote?.status || 'draft',
     issue_date: existingQuote?.created_at
       ? new Date(existingQuote.created_at).toISOString().split('T')[0]
@@ -44,7 +45,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
     valid_until: existingQuote?.valid_until
       ? new Date(existingQuote.valid_until).toISOString().split('T')[0]
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    currency: existingQuote?.currency || settings.general.default_currency || 'INR',
+    currency: existingQuote?.currency || settings.general.default_currency || 'USD',
   });
 
   const [client, setClient] = useState<DocumentClient>({
@@ -97,7 +98,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
     if (!existingQuote) {
       setMeta((prev) => ({
         ...prev,
-        currency: settings.general.default_currency || 'INR',
+        currency: settings.general.default_currency || 'USD',
       }));
       setNotes((prev) => ({
         ...prev,
@@ -105,6 +106,15 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
       }));
     }
   }, [settings, existingQuote]);
+
+  // Reserve the next atomic document number from Settings (new quotes only).
+  useEffect(() => {
+    if (existingQuote || !workspace?.id) return;
+    backend.nextNumber(workspace.id, 'quote')
+      .then(({ number }) => setMeta((prev) => ({ ...prev, document_number: number })))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingQuote?.id, workspace?.id]);
 
   const handleSave = useCallback(
     async (status: QuotationStatus = 'draft') => {
@@ -151,6 +161,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
             name: item.name,
             description: item.description,
             quantity: item.quantity,
+            unit: item.unit || 'pcs',
             unit_price: item.unit_price,
             total: item.total,
           })),

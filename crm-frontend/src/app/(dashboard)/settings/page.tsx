@@ -18,6 +18,7 @@ import {
 import { ThemeSwitcher } from '@/components/dashboard/theme-switcher';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { useWorkspace } from '@/lib/settings/workspace-context';
 import { brand } from '@/brand.config';
 import { getWorkspaceSettings, saveWorkspaceSettings, clearSettingsCache } from '@/lib/settings/api';
 import { updateWorkspace, getWorkspaceMembersWithDetails } from '@/lib/workspace/api';
@@ -29,7 +30,7 @@ import { NotificationPrefsCard } from '@/components/dashboard/notification-prefs
 import { DeleteWorkspaceDialog } from '@/components/dashboard/delete-workspace-dialog';
 import {
   TIMEZONES, CURRENCIES, COUNTRIES, STATES_BY_COUNTRY, LANGUAGES,
-  DATE_FORMATS, NUMBER_FORMATS, WEEK_DAYS, FINANCIAL_YEARS,
+  DATE_FORMATS, NUMBER_FORMATS, FINANCIAL_YEARS,
   SESSION_TIMEOUTS, TEMPLATE_STYLES, TAX_SYSTEMS, BANKS,
   PREFIX_PRESETS, INVOICE_PREFIX_PRESETS, INVOICE_DUE_DAYS, LOGO_POSITIONS,
   SIGNATURE_TEMPLATES, DIGEST_FREQUENCIES, TEAM_ROLES,
@@ -109,6 +110,7 @@ function PrefixSelect({ value, onValueChange, presets, label }: {
 
 export default function SettingsPage() {
   const { workspace, user, resetPassword } = useAuth();
+  const { refresh: refreshWorkspaceSettings } = useWorkspace();
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -123,6 +125,9 @@ export default function SettingsPage() {
   const [numberFormat, setNumberFormat] = useState('1,234.56');
   const [firstDayOfWeek, setFirstDayOfWeek] = useState('monday');
   const [financialYear, setFinancialYear] = useState('jan-dec');
+  const [currencyPosition, setCurrencyPosition] = useState<'before' | 'after'>('before');
+  const [currencyDecimals, setCurrencyDecimals] = useState(2);
+  const [unitsText, setUnitsText] = useState('pcs, hrs, days, kg, box, lot');
   const [invoiceDueDays, setInvoiceDueDays] = useState('30');
   const [logoPosition, setLogoPosition] = useState('left');
   const [emailSignature, setEmailSignature] = useState('default');
@@ -188,6 +193,9 @@ export default function SettingsPage() {
         setNumberFormat(ws.general.number_format);
         setFirstDayOfWeek(ws.general.first_day_of_week);
         setFinancialYear(ws.general.financial_year);
+        setCurrencyPosition(ws.general.currency_position === 'after' ? 'after' : 'before');
+        setCurrencyDecimals(typeof ws.general.currency_decimals === 'number' ? ws.general.currency_decimals : 2);
+        if (Array.isArray(ws.general.units) && ws.general.units.length > 0) setUnitsText(ws.general.units.join(', '));
         setInvoiceDueDays(String(ws.branding.invoice_due_days));
         setLogoPosition(ws.branding.logo_position);
         setEmailSignature(ws.branding.email_signature);
@@ -264,6 +272,9 @@ export default function SettingsPage() {
           number_format: numberFormat,
           first_day_of_week: firstDayOfWeek,
           financial_year: financialYear,
+          currency_position: currencyPosition,
+          currency_decimals: currencyDecimals,
+          units: unitsText.split(',').map((u) => u.trim()).filter(Boolean),
         },
         branding: {
           ...branding,
@@ -298,6 +309,7 @@ export default function SettingsPage() {
       });
 
       clearSettingsCache();
+      try { await refreshWorkspaceSettings(); } catch { /* non-fatal */ }
       setSaveState('saved');
       setHasUnsavedChanges(false);
       setLastUpdated(new Date().toISOString());
@@ -415,7 +427,7 @@ export default function SettingsPage() {
 
   function exportSettings() {
     const data = {
-      workspace: { workspaceName, workspaceUrl, defaultCurrency, timezone, country, state, numberFormat, firstDayOfWeek, financialYear, invoiceDueDays, logoPosition, emailSignature },
+      workspace: { workspaceName, workspaceUrl, defaultCurrency, timezone, country, state, numberFormat, firstDayOfWeek, financialYear, invoiceDueDays, logoPosition, emailSignature, currencyPosition, currencyDecimals, unitsText },
       notifications, teamSettings, appearance, sessionTimeout, twoFactor, branding, taxSystem,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -448,6 +460,9 @@ export default function SettingsPage() {
             if (w.numberFormat) setNumberFormat(w.numberFormat);
             if (w.firstDayOfWeek) setFirstDayOfWeek(w.firstDayOfWeek);
             if (w.financialYear) setFinancialYear(w.financialYear);
+            if (w.currencyPosition) setCurrencyPosition(w.currencyPosition);
+            if (typeof w.currencyDecimals === 'number') setCurrencyDecimals(w.currencyDecimals);
+            if (w.unitsText) setUnitsText(w.unitsText);
             if (w.invoiceDueDays) setInvoiceDueDays(w.invoiceDueDays);
             if (w.logoPosition) setLogoPosition(w.logoPosition);
             if (w.emailSignature) setEmailSignature(w.emailSignature);
@@ -482,6 +497,9 @@ export default function SettingsPage() {
     setNumberFormat(d.general.number_format);
     setFirstDayOfWeek(d.general.first_day_of_week);
     setFinancialYear(d.general.financial_year);
+    setCurrencyPosition(d.general.currency_position);
+    setCurrencyDecimals(d.general.currency_decimals);
+    setUnitsText(d.general.units.join(', '));
     setInvoiceDueDays(String(d.branding.invoice_due_days));
     setLogoPosition(d.branding.logo_position);
     setEmailSignature(d.branding.email_signature);
@@ -619,10 +637,7 @@ export default function SettingsPage() {
                   <Label>Number Format</Label>
                   <SimpleSelect options={NUMBER_FORMATS} value={numberFormat} onValueChange={(v) => { setNumberFormat(v); markDirty(); }} />
                 </div>
-                <div className="space-y-2">
-                  <Label>First Day of Week</Label>
-                  <SimpleSelect options={WEEK_DAYS} value={firstDayOfWeek} onValueChange={(v) => { setFirstDayOfWeek(v); markDirty(); }} />
-                </div>
+
                 <div className="space-y-2">
                   <Label>Financial Year</Label>
                   <SimpleSelect options={FINANCIAL_YEARS} value={financialYear} onValueChange={(v) => { setFinancialYear(v); markDirty(); }} />
@@ -1020,6 +1035,29 @@ export default function SettingsPage() {
                       <Label>Currency Symbol</Label>
                       <Input value={currencySymbol} readOnly className="bg-muted" />
                       <FieldHelper text="Auto-filled from currency selection" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Symbol Position</Label>
+                      <SimpleSelect options={[{ label: 'Before amount ($100)', value: 'before' }, { label: 'After amount (100 $)', value: 'after' }]} value={currencyPosition} onValueChange={(v) => { setCurrencyPosition(v as 'before' | 'after'); markDirty(); }} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Decimals</Label>
+                      <SimpleSelect options={[{ label: '0', value: '0' }, { label: '2', value: '2' }, { label: '3', value: '3' }]} value={String(currencyDecimals)} onValueChange={(v) => { setCurrencyDecimals(Number(v)); markDirty(); }} />
+                      <FieldHelper text="Number grouping (e.g. INR lakh) follows the Number Format" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Units</Label>
+                      <Input value={unitsText} onChange={(e) => { setUnitsText(e.target.value); markDirty(); }} placeholder="pcs, hrs, days, kg, box, lot" />
+                      <FieldHelper text="Comma-separated units for quote/invoice line items" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Default Payment Terms</Label>
+                      <Input value={branding.default_payment_terms || ''} onChange={(e) => { setBranding((p) => ({ ...p, default_payment_terms: e.target.value })); markDirty(); }} placeholder="Net 30" />
+                      <FieldHelper text="Applied to new invoices automatically" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

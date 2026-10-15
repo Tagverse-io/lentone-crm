@@ -49,7 +49,7 @@ import { KpiCard } from '@/components/dashboard/kpi-card';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { useWorkspace } from '@/lib/settings/workspace-context';
-import { formatCurrency } from '@/lib/utils';
+import { useFmt } from '@/lib/format';
 import { backend } from '@/lib/backend-client';
 import { DataPagination } from '@/components/ui/data-pagination';
 
@@ -84,7 +84,7 @@ function daysBetween(dateStr: string): number {
 
 export default function DealsPage() {
   const { workspace, user } = useAuth();
-  const { currency } = useWorkspace();
+  const fmt = useFmt();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
@@ -295,14 +295,14 @@ export default function DealsPage() {
   const kpiCards = [
     {
       title: 'Total Pipeline Value',
-      value: formatCurrency(totalPipelineValue, currency),
+      value: fmt.money(totalPipelineValue),
       change: 'Open deals total',
       trend: 'up' as const,
       icon: DollarSign,
     },
     {
       title: 'Won This Month',
-      value: formatCurrency(wonThisMonth, currency),
+      value: fmt.money(wonThisMonth),
       change: `${wonThisMonthCount} deals`,
       trend: 'up' as const,
       icon: TrendingUp,
@@ -457,7 +457,7 @@ export default function DealsPage() {
                         {lead.company || '—'}
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono">{lead.estimated_value ? formatCurrency(lead.estimated_value, currency) : '—'}</TableCell>
+                    <TableCell className="font-mono">{lead.estimated_value ? fmt.money(lead.estimated_value) : '—'}</TableCell>
                     <TableCell>
                       <Badge className={stageColors[lead.status]} variant="outline">
                         {stageLabels[lead.status]}
@@ -473,7 +473,7 @@ export default function DealsPage() {
                         </div>
                       ) : lead.next_follow_up ? (
                         <span className="text-xs text-muted-foreground">
-                          {new Date(lead.next_follow_up).toLocaleDateString()}
+                          {fmt.date(lead.next_follow_up)}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -594,7 +594,7 @@ export default function DealsPage() {
                                       </div>
                                       <div className="flex items-center gap-1">
                                         <DollarSign size={12} />
-                                        {lead.estimated_value ? formatCurrency(lead.estimated_value, currency) : '—'}
+                                        {lead.estimated_value ? fmt.money(lead.estimated_value) : '—'}
                                       </div>
                                       {lead.source && (
                                         <div className="flex items-center gap-1">
@@ -685,7 +685,7 @@ export default function DealsPage() {
               <div className="rounded-xl border bg-card p-5">
                 <p className="text-sm text-muted-foreground mb-1">Deal Value</p>
                 <p className="text-2xl sm:text-3xl font-semibold">
-                  {selectedLead.estimated_value ? formatCurrency(selectedLead.estimated_value, currency) : 'Not set'}
+                  {selectedLead.estimated_value ? fmt.money(selectedLead.estimated_value) : 'Not set'}
                 </p>
               </div>
 
@@ -706,7 +706,7 @@ export default function DealsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Created</p>
-                  <p className="text-sm font-medium">{new Date(selectedLead.created_at).toLocaleDateString()}</p>
+                  <p className="text-sm font-medium">{fmt.date(selectedLead.created_at)}</p>
                 </div>
               </div>
 
@@ -731,7 +731,7 @@ export default function DealsPage() {
                     <Calendar size={14} className="text-muted-foreground shrink-0" />
                     <span>
                       {selectedLead.next_follow_up
-                        ? new Date(selectedLead.next_follow_up).toLocaleDateString()
+                        ? fmt.date(selectedLead.next_follow_up)
                         : 'No follow-up scheduled'}
                     </span>
                   </div>

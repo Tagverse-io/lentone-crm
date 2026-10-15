@@ -12,7 +12,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getCompanySettings, getBase64ImageFromURL } from './helpers';
+import type { CompanySettings } from './types';
 import type { Quotation, QuotationItem, Invoice, Contract, User, Project } from '@/lib/db/types';
+import { formatMoney, formatDateS, resolveFormatSettings, type FormatSettings } from '@/lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PW = 210;   // A4 width  mm
@@ -26,6 +28,28 @@ const C_LIGHT = [150, 150, 150] as [number, number, number];
 const C_LINE  = [230, 230, 230] as [number, number, number];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fsFromCompany(s: CompanySettings, currency: string): FormatSettings {
+  return resolveFormatSettings(
+    {
+      default_currency: currency,
+      currency_symbol: s.currency_symbol,
+      currency_position: s.currency_position,
+      currency_decimals: s.currency_decimals,
+      number_format: s.number_format,
+    },
+    { date_format: s.date_format, timezone: s.timezone },
+  );
+}
+
+/** jsPDF-Helvetica-safe money: non-latin symbols fall back to code/Rs. */
+function formatAmtS(amount: number, fs: FormatSettings): string {
+  let symbol = fs.symbol;
+  if (/[^\x20-\x7E]/.test(symbol)) {
+    symbol = fs.currency === 'INR' ? 'Rs.' : fs.currency;
+  }
+  return formatMoney(amount, { ...fs, symbol });
+}
 
 function formatAmt(amount: number, currency = 'INR'): string {
   const n = amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -64,6 +88,7 @@ export async function generateQuotationPdf(
 ): Promise<jsPDF> {
   const s   = await getCompanySettings(workspaceId);
   const cur = s.default_currency || 'INR';
+  const fs = fsFromCompany(s, cur);
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -84,11 +109,11 @@ export async function generateQuotationPdf(
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   let yR = M + 14;
   doc.text(`Reference: ${quotation.quotation_number}`, RX, yR, { align: 'right' }); yR += 5;
-  doc.text(`Date: ${new Date(quotation.created_at).toLocaleDateString('en-IN')}`, RX, yR, { align: 'right' }); yR += 5;
+  doc.text(`Date: ${formatDateS(quotation.created_at, fs)}`, RX, yR, { align: 'right' }); yR += 5;
   if (quotation.valid_until) {
     const d = new Date(quotation.valid_until);
     if (!isNaN(d.getTime())) {
-      doc.text(`Valid Until: ${d.toLocaleDateString('en-IN')}`, RX, yR, { align: 'right' });
+      doc.text(`Valid Until: ${formatDateS(quotation.valid_until, fs)}`, RX, yR, { align: 'right' });
     }
   }
 
@@ -139,14 +164,15 @@ export async function generateQuotationPdf(
 
   autoTable(doc, {
     startY: tableY,
-    head: [['Description', 'Qty', 'Unit Price', 'Total']],
+    head: [['Description', 'Qty', 'Unit', 'Unit Price', 'Total']],
     body: quotation.items.map((it: QuotationItem) => {
       const desc = it.name ? `${it.name}${it.description ? `\n${it.description}` : ''}` : it.description;
       return [
         desc,
         it.quantity.toString(),
-        formatAmt(it.unit_price, cur),
-        formatAmt(it.total, cur)
+        it.unit || '',
+        formatAmtS(it.unit_price, fs),
+        formatAmtS(it.total, fs)
       ];
     }),
     theme: 'plain',
@@ -183,12 +209,12 @@ export async function generateQuotationPdf(
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   
   doc.text('Subtotal:', RX - 40, y, { align: 'right' });
-  doc.text(formatAmt(sub, cur), RX, y, { align: 'right' }); y += 6;
+  doc.text(formatAmtS(sub, fs), RX, y, { align: 'right' }); y += 6;
 
   if (quotation.discount_amount) {
     const dLabel = quotation.discount_percent ? `Discount (${quotation.discount_percent}%):` : 'Discount:';
     doc.text(dLabel, RX - 40, y, { align: 'right' });
-    doc.text(`- ${formatAmt(quotation.discount_amount, cur)}`, RX, y, { align: 'right' }); y += 6;
+    doc.text(`- ${formatAmtS(quotation.discount_amount, fs)}`, RX, y, { align: 'right' }); y += 6;
   }
 
   const subAfterDiscount = sub - (quotation.discount_amount || 0);
@@ -196,13 +222,13 @@ export async function generateQuotationPdf(
   const sP = quotation.sgst_percent ?? s.tax_sgst ?? 0;
   const iP = quotation.igst_percent ?? s.tax_igst ?? 0;
 
-  if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * cP / 100, cur), RX, y, { align: 'right' }); y += 6; }
-  if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * sP / 100, cur), RX, y, { align: 'right' }); y += 6; }
-  if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * iP / 100, cur), RX, y, { align: 'right' }); y += 6; }
+  if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * cP / 100, fs), RX, y, { align: 'right' }); y += 6; }
+  if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * sP / 100, fs), RX, y, { align: 'right' }); y += 6; }
+  if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * iP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   
   if (!cP && !sP && !iP && quotation.tax_amount) {
     doc.text('Tax:', RX - 40, y, { align: 'right' });
-    doc.text(formatAmt(quotation.tax_amount, cur), RX, y, { align: 'right' }); y += 6;
+    doc.text(formatAmtS(quotation.tax_amount, fs), RX, y, { align: 'right' }); y += 6;
   }
 
   // Grand Total Block
@@ -212,7 +238,7 @@ export async function generateQuotationPdf(
   
   doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...C_DARK);
   doc.text('Total:', RX - 40, y + 2, { align: 'right' });
-  doc.text(formatAmt(quotation.amount, cur), RX - 4, y + 2, { align: 'right' });
+  doc.text(formatAmtS(quotation.amount, fs), RX - 4, y + 2, { align: 'right' });
   y += 18;
 
   // ── Details (Notes, Terms, Bank) ──────────────────────────────────────────
@@ -271,6 +297,7 @@ export async function generateInvoicePdf(
 ): Promise<jsPDF> {
   const s   = await getCompanySettings(workspaceId);
   const cur = s.default_currency || 'INR';
+  const fs = fsFromCompany(s, cur);
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -289,9 +316,9 @@ export async function generateInvoicePdf(
   let yR = M + 14;
   doc.text(`Invoice #: ${invoice.invoice_number}`, RX, yR, { align: 'right' }); yR += 5;
   const issueDate = invoice.issue_date || invoice.created_at;
-  doc.text(`Date: ${new Date(issueDate).toLocaleDateString('en-IN')}`, RX, yR, { align: 'right' }); yR += 5;
+  doc.text(`Date: ${formatDateS(issueDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
   if (invoice.due_date) {
-    doc.text(`Due Date: ${new Date(invoice.due_date).toLocaleDateString('en-IN')}`, RX, yR, { align: 'right' }); yR += 5;
+    doc.text(`Due Date: ${formatDateS(invoice.due_date, fs)}`, RX, yR, { align: 'right' }); yR += 5;
   }
 
   const topSectionY = Math.max(startY, yR) + 12;
@@ -347,20 +374,22 @@ export async function generateInvoicePdf(
           return [
             desc,
             it.quantity.toString(),
-            formatAmt(it.unit_price, cur),
-            formatAmt(it.total, cur),
+            it.unit || '',
+            formatAmtS(it.unit_price, fs),
+            formatAmtS(it.total, fs),
           ];
         })
       : [[
           invoice.description || 'Professional Services',
           '1',
-          formatAmt(invoice.amount, cur),
-          formatAmt(invoice.amount, cur),
+          '',
+          formatAmtS(invoice.amount, fs),
+          formatAmtS(invoice.amount, fs),
         ]];
 
   autoTable(doc, {
     startY: tableY,
-    head: [['Description', 'Qty', 'Unit Price', 'Total']],
+    head: [['Description', 'Qty', 'Unit', 'Unit Price', 'Total']],
     body: rows,
     theme: 'plain',
     styles: { font: 'helvetica', fontSize: 9, textColor: C_GRAY, cellPadding: { top: 6, bottom: 6, left: 4, right: 4 } },
@@ -385,12 +414,12 @@ export async function generateInvoicePdf(
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   
   doc.text('Subtotal:', RX - 40, y, { align: 'right' });
-  doc.text(formatAmt(sub, cur), RX, y, { align: 'right' }); y += 6;
+  doc.text(formatAmtS(sub, fs), RX, y, { align: 'right' }); y += 6;
 
   if (invoice.discount_amount) {
     const dLabel = invoice.discount_percent ? `Discount (${invoice.discount_percent}%):` : 'Discount:';
     doc.text(dLabel, RX - 40, y, { align: 'right' });
-    doc.text(`- ${formatAmt(invoice.discount_amount, cur)}`, RX, y, { align: 'right' }); y += 6;
+    doc.text(`- ${formatAmtS(invoice.discount_amount, fs)}`, RX, y, { align: 'right' }); y += 6;
   }
 
   const subAfterDiscount = sub - (invoice.discount_amount || 0);
@@ -398,13 +427,13 @@ export async function generateInvoicePdf(
   const sP = invoice.sgst_percent ?? s.tax_sgst ?? 0;
   const iP = invoice.igst_percent ?? s.tax_igst ?? 0;
 
-  if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * cP / 100, cur), RX, y, { align: 'right' }); y += 6; }
-  if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * sP / 100, cur), RX, y, { align: 'right' }); y += 6; }
-  if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmt(subAfterDiscount * iP / 100, cur), RX, y, { align: 'right' }); y += 6; }
+  if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * cP / 100, fs), RX, y, { align: 'right' }); y += 6; }
+  if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * sP / 100, fs), RX, y, { align: 'right' }); y += 6; }
+  if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * iP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   
   if (!cP && !sP && !iP && (invoice.tax_amount || invoice.tax)) {
     doc.text('Tax:', RX - 40, y, { align: 'right' });
-    doc.text(formatAmt(invoice.tax_amount || invoice.tax || 0, cur), RX, y, { align: 'right' }); y += 6;
+    doc.text(formatAmtS(invoice.tax_amount || invoice.tax || 0, fs), RX, y, { align: 'right' }); y += 6;
   }
 
   const amountPaid = invoice.amount_paid || 0;
@@ -413,7 +442,7 @@ export async function generateInvoicePdf(
   if (amountPaid > 0) {
     doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     doc.text('Amount Paid:', RX - 40, y + 2, { align: 'right' });
-    doc.text(`- ${formatAmt(amountPaid, cur)}`, RX - 4, y + 2, { align: 'right' });
+    doc.text(`- ${formatAmtS(amountPaid, fs)}`, RX - 4, y + 2, { align: 'right' });
     y += 8;
   }
 
@@ -423,7 +452,7 @@ export async function generateInvoicePdf(
   
   doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...C_DARK);
   doc.text(amountPaid > 0 ? 'Balance Due:' : 'Total Due:', RX - 40, y + 2, { align: 'right' });
-  doc.text(formatAmt(amountPaid > 0 ? balanceDue : invoice.amount, cur), RX - 4, y + 2, { align: 'right' });
+  doc.text(formatAmtS(amountPaid > 0 ? balanceDue : invoice.amount, fs), RX - 4, y + 2, { align: 'right' });
   y += 18;
 
   // Details
@@ -493,6 +522,7 @@ export async function generateContractPdf(
 ): Promise<jsPDF> {
   const s   = await getCompanySettings();
   const cur = s.default_currency || 'INR';
+  const fs = fsFromCompany(s, cur);
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -510,7 +540,7 @@ export async function generateContractPdf(
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   let yR = M + 14;
   doc.text(`Ref: ${contract.contract_number}`, RX, yR, { align: 'right' }); yR += 5;
-  doc.text(`Date: ${new Date(contract.created_at).toLocaleDateString('en-IN')}`, RX, yR, { align: 'right' }); yR += 5;
+  doc.text(`Date: ${formatDateS(contract.created_at, fs)}`, RX, yR, { align: 'right' }); yR += 5;
 
   const topSectionY = Math.max(startY, yR) + 12;
   drawDivider(doc, topSectionY);
@@ -547,15 +577,15 @@ export async function generateContractPdf(
 
   const tableY = Math.max(yL, yBT) + 12;
   const contractType  = contract.template_type || 'Service Agreement';
-  const contractValue = contract.value ? formatAmt(contract.value, cur) : '-';
+  const contractValue = contract.value ? formatAmtS(contract.value, fs) : '-';
 
   autoTable(doc, {
     startY: tableY,
     head: [['Description', 'Start Date', 'End Date', 'Value']],
     body: [[
       contractType,
-      contract.start_date ? new Date(contract.start_date).toLocaleDateString('en-IN') : '-',
-      contract.end_date   ? new Date(contract.end_date).toLocaleDateString('en-IN')   : '-',
+      contract.start_date ? formatDateS(contract.start_date, fs) : '-',
+      contract.end_date   ? formatDateS(contract.end_date, fs)   : '-',
       contractValue,
     ]],
     theme: 'plain',
