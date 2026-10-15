@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import { auth as adminAuth } from "@/lib/admin";
+import { verifyAccessToken } from "@/lib/oauth";
 import { preflight, withCors } from "@/lib/cors";
 import { MCP_TOOLS, type McpAuth } from "@/lib/mcp-tools";
 
@@ -27,6 +28,8 @@ async function resolveAuth(req: NextRequest): Promise<McpAuth> {
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!token) throw new Error("Missing Authorization Bearer token");
   if (token === getEnv().CRON_SECRET) return { mode: "service" };
+  const oauth = await verifyAccessToken(token).catch(() => null);
+  if (oauth) return { mode: "user", uid: oauth.uid, email: undefined };
   const decoded = await adminAuth().verifyIdToken(token);
   return { mode: "user", uid: decoded.uid, email: decoded.email };
 }
