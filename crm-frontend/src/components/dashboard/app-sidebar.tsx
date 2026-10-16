@@ -40,7 +40,6 @@ import {
   Users2,
   BarChart3,
   Puzzle,
-  Bot,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -87,55 +86,83 @@ interface NavConfig {
 
 function getNavConfig(leadCount: number, hasPermission: (module: string, action: 'view' | 'edit' | 'delete') => boolean): NavConfig {
   // Filter items based on permissions
-  const filterByPermission = (items: NavItem[], module: string) => 
+  const filterByPermission = (items: NavItem[], module: string) =>
     hasPermission(module, 'view') ? items : [];
+  // Module flags from NEXT_PUBLIC_MODULE_* (brand.modules) — do not delete the flags.
+  const m = brand.modules;
 
   return {
-    topItems: [
-      { title: 'Dashboard', href: '/dashboard', icon: Hexagon },
-    ],
+    topItems: m.dashboard
+      ? [{ title: 'Dashboard', href: '/dashboard', icon: Hexagon }]
+      : [],
     groups: [
-      {
-        title: 'CRM',
-        items: [
-          ...filterByPermission([{ title: 'Leads', href: '/leads', icon: Target, badge: leadCount || undefined }], 'leads'),
-          ...filterByPermission([
-            { title: 'Clients', href: '/clients', icon: Contact2 },
-            { title: 'Contacts', href: '/contacts', icon: Contact2 },
-            { title: 'Follow-ups', href: '/follow-ups', icon: Bell },
-            { title: 'Pipelines', href: '/pipeline', icon: GitBranch },
-          ], 'contracts'), // Reusing contracts perms for general CRM for now
-        ],
-      },
-      {
-        title: 'Revenue Hub',
-        items: [
-          ...filterByPermission([
-            { title: 'Quotations', href: '/quotes', icon: FileText },
-            { title: 'Invoices', href: '/invoices', icon: Receipt },
-          ], 'contracts'),
-          ...filterByPermission([
-            { title: 'Payments', href: '/payments', icon: Wallet },
-          ], 'payments')
-        ],
-      },
+      ...(m.crm
+        ? [
+            {
+              title: 'CRM',
+              items: [
+                ...filterByPermission([{ title: 'Leads', href: '/leads', icon: Target, badge: leadCount || undefined }], 'leads'),
+                ...filterByPermission(
+                  [
+                    { title: 'Clients', href: '/clients', icon: Contact2 },
+                    { title: 'Contacts', href: '/contacts', icon: Contact2 },
+                    { title: 'Follow-ups', href: '/follow-ups', icon: Bell },
+                    { title: 'Pipelines', href: '/pipeline', icon: GitBranch },
+                  ],
+                  'contracts',
+                ), // Reusing contracts perms for general CRM for now
+              ],
+            },
+          ]
+        : []),
+      ...(m.sales
+        ? [
+            {
+              title: 'Revenue Hub',
+              items: [
+                ...filterByPermission(
+                  [
+                    { title: 'Quotations', href: '/quotes', icon: FileText },
+                    { title: 'Invoices', href: '/invoices', icon: Receipt },
+                  ],
+                  'contracts',
+                ),
+                ...filterByPermission([{ title: 'Payments', href: '/payments', icon: Wallet }], 'payments'),
+              ],
+            },
+          ]
+        : []),
       {
         title: 'Workspace',
-        items: filterByPermission([
-          { title: 'Projects', href: '/projects', icon: Briefcase },
-          { title: 'Tasks', href: '/tasks', icon: CheckSquare },
-          { title: 'Calendar', href: '/calendar', icon: Calendar },
-        ], 'workspace')
+        items: [
+          ...(m.projects
+            ? filterByPermission(
+                [
+                  { title: 'Projects', href: '/projects', icon: Briefcase },
+                  { title: 'Tasks', href: '/tasks', icon: CheckSquare },
+                ],
+                'workspace',
+              )
+            : []),
+          ...(m.calendar ? filterByPermission([{ title: 'Calendar', href: '/calendar', icon: Calendar }], 'workspace') : []),
+        ],
       },
-      {
-        title: 'Marketing',
-        items: filterByPermission([
-          { title: 'Social Media', href: '/social', icon: Smartphone },
-          { title: 'Content Calendar', href: '/content-calendar', icon: Calendar },
-          { title: 'Video Pipeline', href: '/video', icon: Camera },
-        ], 'workspace')
-      },
-    ].filter(g => g.items.length > 0)
+      ...(m.marketing
+        ? [
+            {
+              title: 'Marketing',
+              items: filterByPermission(
+                [
+                  { title: 'Social Media', href: '/social', icon: Smartphone },
+                  { title: 'Content Calendar', href: '/content-calendar', icon: Calendar },
+                  { title: 'Video Pipeline', href: '/video', icon: Camera },
+                ],
+                'workspace',
+              ),
+            },
+          ]
+        : []),
+    ].filter((g) => g.items.length > 0)
   };
 }
 
@@ -435,20 +462,6 @@ export function AppSidebar() {
               </div>
             ))}
             <div className="border-t pt-2 mt-2 space-y-0.5">
-              <SheetClose asChild>
-                <Link
-                  href="/ai-assistant"
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
-                    pathname === '/ai-assistant'
-                      ? 'bg-primary/10 text-primary font-medium'
-                      : 'text-sidebar-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
-                  )}
-                >
-                  <Bot size={18} />
-                  <span>AI Assistant</span>
-                </Link>
-              </SheetClose>
               <SheetClose asChild>
                 <Link
                   href="/settings"

@@ -19,15 +19,20 @@ interface SearchResult {
 const staticItems: SearchResult[] = [
   { label: 'Dashboard', href: '/dashboard', icon: Briefcase, category: 'Pages' },
   { label: 'Leads', href: '/leads', icon: Users, category: 'CRM' },
+  { label: 'Clients', href: '/clients', icon: Users, category: 'CRM' },
   { label: 'Contacts', href: '/contacts', icon: Users, category: 'CRM' },
-
+  { label: 'Follow-ups', href: '/follow-ups', icon: Users, category: 'CRM' },
+  { label: 'Pipeline', href: '/pipeline', icon: Target, category: 'CRM' },
   { label: 'Quotes', href: '/quotes', icon: FileText, category: 'Revenue' },
   { label: 'Invoices', href: '/invoices', icon: FileText, category: 'Revenue' },
-  { label: 'Contracts', href: '/contracts', icon: FileText, category: 'Revenue' },
+  { label: 'Payments', href: '/payments', icon: DollarSign, category: 'Revenue' },
   { label: 'Projects', href: '/projects', icon: Briefcase, category: 'Collaboration' },
   { label: 'Tasks', href: '/tasks', icon: FileText, category: 'Collaboration' },
-  { label: 'Analytics', href: '/analytics', icon: FileText, category: 'Analytics' },
-  { label: 'Reports', href: '/reports', icon: FileText, category: 'Analytics' },
+  { label: 'Calendar', href: '/calendar', icon: FileText, category: 'Collaboration' },
+  { label: 'Social Media', href: '/social', icon: FileText, category: 'Marketing' },
+  { label: 'Content Calendar', href: '/content-calendar', icon: FileText, category: 'Marketing' },
+  { label: 'Video Pipeline', href: '/video', icon: FileText, category: 'Marketing' },
+  { label: 'Settings', href: '/settings', icon: FileText, category: 'Pages' },
 ];
 
 interface GlobalSearchProps {
