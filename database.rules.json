@@ -2,6 +2,39 @@
   "rules": {
     ".read": "auth != null",
     ".write": "auth != null",
+    "clients": {
+      ".indexOn": ["createdAt", "nameKey", "category"]
+    },
+    "leads": {
+      ".indexOn": ["createdAt", "nameKey", "stage", "clientId"]
+    },
+    "workers": {
+      ".indexOn": ["createdAt", "nameKey"]
+    },
+    "tasks": {
+      ".indexOn": ["createdAt", "clientKey", "workerKey", "status", "type", "workerId", "clientId"]
+    },
+    "products": {
+      ".indexOn": ["createdAt", "nameKey", "category", "sku"]
+    },
+    "stockMovements": {
+      ".indexOn": ["createdAt", "productId"]
+    },
+    "orders": {
+      ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId"]
+    },
+    "quotations": {
+      ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId"]
+    },
+    "invoices": {
+      ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId"]
+    },
+    "payments": {
+      ".indexOn": ["createdAt", "invoiceKey", "clientKey", "mode", "invoiceId", "clientId"]
+    },
+    "deliveries": {
+      ".indexOn": ["createdAt", "clientKey", "status", "workerId", "clientId", "orderId", "taskId"]
+    },
     "deliveryProofs": {
       "$deliveryId": {
         ".read": "auth != null",
