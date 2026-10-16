@@ -32,7 +32,7 @@ import {
   TIMEZONES, CURRENCIES, COUNTRIES, STATES_BY_COUNTRY, LANGUAGES,
   DATE_FORMATS, NUMBER_FORMATS, FINANCIAL_YEARS,
   SESSION_TIMEOUTS, TEMPLATE_STYLES, TAX_SYSTEMS, BANKS,
-  PREFIX_PRESETS, INVOICE_PREFIX_PRESETS, INVOICE_DUE_DAYS, LOGO_POSITIONS,
+  PREFIX_PRESETS, INVOICE_PREFIX_PRESETS, CREDIT_NOTE_PREFIX_PRESETS, INVOICE_DUE_DAYS, LOGO_POSITIONS,
   SIGNATURE_TEMPLATES, DIGEST_FREQUENCIES, TEAM_ROLES,
   API_PERMISSIONS, API_EXPIRY, THEME_OPTIONS, FONT_SIZES,
 } from '@/lib/settings/constants';
@@ -48,7 +48,7 @@ interface LoginSession {
 }
 
 const TAB_SEARCH_MAP: Record<string, string[]> = {
-  general: ['workspace', 'name', 'currency', 'timezone', 'url', 'country', 'state', 'number format', 'week', 'financial year'],
+  general: ['workspace', 'name', 'currency', 'timezone', 'url', 'country', 'state', 'number format', 'financial year'],
   notifications: ['email', 'push', 'slack', 'digest', 'mention', 'notification', 'frequency'],
   security: ['password', '2fa', 'session', 'timeout', 'auth', 'login'],
   appearance: ['theme', 'dark', 'light', 'sidebar', 'compact', 'color', 'font', 'language'],
@@ -115,6 +115,7 @@ export default function SettingsPage() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [sendingTest, setSendingTest] = useState<'invoice' | 'quotation' | null>(null);
 
   const [workspaceName, setWorkspaceName] = useState(brand.appName);
   const [workspaceUrl, setWorkspaceUrl] = useState('my-crm');
@@ -123,11 +124,11 @@ export default function SettingsPage() {
   const [country, setCountry] = useState('');
   const [state, setState] = useState('');
   const [numberFormat, setNumberFormat] = useState('1,234.56');
-  const [firstDayOfWeek, setFirstDayOfWeek] = useState('monday');
   const [financialYear, setFinancialYear] = useState('jan-dec');
   const [currencyPosition, setCurrencyPosition] = useState<'before' | 'after'>('before');
   const [currencyDecimals, setCurrencyDecimals] = useState(2);
   const [unitsText, setUnitsText] = useState('pcs, hrs, days, kg, box, lot');
+  const [expenseCategoriesText, setExpenseCategoriesText] = useState('Rent, Salaries, Utilities, Marketing, Travel, Software, Tax, Other');
   const [invoiceDueDays, setInvoiceDueDays] = useState('30');
   const [logoPosition, setLogoPosition] = useState('left');
   const [emailSignature, setEmailSignature] = useState('default');
@@ -191,11 +192,11 @@ export default function SettingsPage() {
         setCountry(ws.general.country);
         setState(ws.general.state);
         setNumberFormat(ws.general.number_format);
-        setFirstDayOfWeek(ws.general.first_day_of_week);
         setFinancialYear(ws.general.financial_year);
         setCurrencyPosition(ws.general.currency_position === 'after' ? 'after' : 'before');
         setCurrencyDecimals(typeof ws.general.currency_decimals === 'number' ? ws.general.currency_decimals : 2);
         if (Array.isArray(ws.general.units) && ws.general.units.length > 0) setUnitsText(ws.general.units.join(', '));
+        if (Array.isArray((ws.general as { expense_categories?: string[] }).expense_categories) && (ws.general as { expense_categories?: string[] }).expense_categories!.length > 0) setExpenseCategoriesText((ws.general as { expense_categories?: string[] }).expense_categories!.join(', '));
         setInvoiceDueDays(String(ws.branding.invoice_due_days));
         setLogoPosition(ws.branding.logo_position);
         setEmailSignature(ws.branding.email_signature);
@@ -211,6 +212,7 @@ export default function SettingsPage() {
           payment_alerts: ws.notifications.payment_alerts,
           project_alerts: ws.notifications.project_alerts,
           support_alerts: ws.notifications.support_alerts,
+          test_email: (ws.notifications as { test_email?: string }).test_email || '',
         });
         setTeamSettings({
           default_role: ws.team.default_role,
@@ -245,15 +247,15 @@ export default function SettingsPage() {
     if (!initialState.current) return;
     const current = JSON.stringify({
       workspaceName, workspaceUrl, defaultCurrency, timezone, country, state,
-      numberFormat, firstDayOfWeek, financialYear, invoiceDueDays, logoPosition,
+      numberFormat, financialYear, invoiceDueDays, logoPosition,
       emailSignature, notifications, teamSettings, appearance, sessionTimeout,
-      twoFactor, apiKeys, branding, taxSystem,
+      twoFactor, apiKeys, branding, taxSystem, expenseCategoriesText,
     });
     setHasUnsavedChanges(current !== initialState.current);
   }, [workspaceName, workspaceUrl, defaultCurrency, timezone, country, state,
-    numberFormat, firstDayOfWeek, financialYear, invoiceDueDays, logoPosition,
+    numberFormat, financialYear, invoiceDueDays, logoPosition,
     emailSignature, notifications, teamSettings, appearance, sessionTimeout,
-    twoFactor, apiKeys, branding, taxSystem]);
+    twoFactor, apiKeys, branding, taxSystem, expenseCategoriesText]);
 
   const saveSettings = async () => {
     if (!user?.id) return;
@@ -270,11 +272,11 @@ export default function SettingsPage() {
           country,
           state,
           number_format: numberFormat,
-          first_day_of_week: firstDayOfWeek,
           financial_year: financialYear,
           currency_position: currencyPosition,
           currency_decimals: currencyDecimals,
           units: unitsText.split(',').map((u) => u.trim()).filter(Boolean),
+          expense_categories: expenseCategoriesText.split(',').map((c) => c.trim()).filter(Boolean),
         },
         branding: {
           ...branding,
@@ -337,8 +339,39 @@ export default function SettingsPage() {
     : null;
 
   function toggleNotification(key: keyof NotificationSettings) {
+    if (key === 'test_email') return;
     setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
     markDirty();
+  }
+
+  function isValidTestEmail(v: string): boolean {
+    return /.+@.+\..+/.test(v.trim());
+  }
+
+  async function sendTestDocument(kind: 'invoice' | 'quotation') {
+    const to = (notifications.test_email || '').trim();
+    if (!isValidTestEmail(to)) {
+      toast.error('Add a test email in Settings');
+      return;
+    }
+    const workspaceId = workspace?.id || user?.company_id;
+    if (!workspaceId) {
+      toast.error('No workspace ID found');
+      return;
+    }
+    setSendingTest(kind);
+    try {
+      const { backendFetch } = await import('@/lib/backend-client');
+      await backendFetch<{ ok: boolean }>(`/api/test/send-${kind}`, {
+        method: 'POST',
+        body: JSON.stringify({ orgId: workspaceId }),
+      });
+      toast.success(`Test ${kind} sent to ${to} (test mode — no customer emailed)`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Failed to send test ${kind}`);
+    } finally {
+      setSendingTest(null);
+    }
   }
 
   function generateApiKey() {
@@ -380,10 +413,14 @@ export default function SettingsPage() {
       }
 
       const dataUrl = await readAsDataUrl(file);
-      const resized = await downscaleImage(dataUrl, 512);
+      const { dataUrl: resized, width, height } = await downscaleImage(dataUrl, 512);
       setBranding((p) => ({ ...p, [field]: resized }));
       markDirty();
-      toast.success('Logo ready — press Save to apply');
+      if (Math.max(width, height) < 300) {
+        toast.warning(`Logo is only ${width}×${height}px — under 300px it may look blurry on PDFs. Upload still accepted.`);
+      } else {
+        toast.success('Logo ready — press Save to apply');
+      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Failed to read logo');
     } finally {
@@ -400,13 +437,14 @@ export default function SettingsPage() {
     });
   }
 
-  function downscaleImage(dataUrl: string, maxDim: number): Promise<string> {
+  function downscaleImage(dataUrl: string, maxDim: number): Promise<{ dataUrl: string; width: number; height: number }> {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
+        const done = (url: string): void => resolve({ dataUrl: url, width: img.width, height: img.height });
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         if (scale >= 1) {
-          resolve(dataUrl);
+          done(dataUrl);
           return;
         }
         const canvas = document.createElement('canvas');
@@ -414,11 +452,11 @@ export default function SettingsPage() {
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(dataUrl);
+          done(dataUrl);
           return;
         }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/png'));
+        done(canvas.toDataURL('image/png'));
       };
       img.onerror = () => reject(new Error('Could not decode image'));
       img.src = dataUrl;
@@ -427,7 +465,7 @@ export default function SettingsPage() {
 
   function exportSettings() {
     const data = {
-      workspace: { workspaceName, workspaceUrl, defaultCurrency, timezone, country, state, numberFormat, firstDayOfWeek, financialYear, invoiceDueDays, logoPosition, emailSignature, currencyPosition, currencyDecimals, unitsText },
+      workspace: { workspaceName, workspaceUrl, defaultCurrency, timezone, country, state, numberFormat, financialYear, invoiceDueDays, logoPosition, emailSignature, currencyPosition, currencyDecimals, unitsText, expenseCategoriesText },
       notifications, teamSettings, appearance, sessionTimeout, twoFactor, branding, taxSystem,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -458,11 +496,11 @@ export default function SettingsPage() {
             if (w.country) setCountry(w.country);
             if (w.state) setState(w.state);
             if (w.numberFormat) setNumberFormat(w.numberFormat);
-            if (w.firstDayOfWeek) setFirstDayOfWeek(w.firstDayOfWeek);
             if (w.financialYear) setFinancialYear(w.financialYear);
             if (w.currencyPosition) setCurrencyPosition(w.currencyPosition);
             if (typeof w.currencyDecimals === 'number') setCurrencyDecimals(w.currencyDecimals);
             if (w.unitsText) setUnitsText(w.unitsText);
+            if (typeof w.expenseCategoriesText === 'string') setExpenseCategoriesText(w.expenseCategoriesText);
             if (w.invoiceDueDays) setInvoiceDueDays(w.invoiceDueDays);
             if (w.logoPosition) setLogoPosition(w.logoPosition);
             if (w.emailSignature) setEmailSignature(w.emailSignature);
@@ -495,11 +533,11 @@ export default function SettingsPage() {
     setCountry(d.general.country);
     setState(d.general.state);
     setNumberFormat(d.general.number_format);
-    setFirstDayOfWeek(d.general.first_day_of_week);
     setFinancialYear(d.general.financial_year);
     setCurrencyPosition(d.general.currency_position);
     setCurrencyDecimals(d.general.currency_decimals);
     setUnitsText(d.general.units.join(', '));
+    setExpenseCategoriesText(d.general.expense_categories.join(', '));
     setInvoiceDueDays(String(d.branding.invoice_due_days));
     setLogoPosition(d.branding.logo_position);
     setEmailSignature(d.branding.email_signature);
@@ -646,6 +684,16 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
           <Card>
+            <CardHeader><CardTitle className="text-lg">Finance</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Expense Categories</Label>
+                <Input value={expenseCategoriesText} onChange={(e) => { setExpenseCategoriesText(e.target.value); markDirty(); }} placeholder="Rent, Salaries, Utilities, …" />
+                <FieldHelper text="Comma-separated list used by the Finance expenses form. Names are defaults only — edit freely, no code changes needed." />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
             <CardHeader><CardTitle className="text-lg">Data Management</CardTitle></CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
@@ -715,6 +763,44 @@ export default function SettingsPage() {
                       </Button>
                     )}
                   </div>
+                </div>
+              </CollapsibleSection>
+              <CollapsibleSection title="Test Email" helper="Test mode — outbound test mail goes ONLY to this address, never to customers">
+                <div className="space-y-3 pt-3">
+                  <div className="space-y-2">
+                    <Label>Test email recipient</Label>
+                    <Input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={notifications.test_email || ''}
+                      onChange={(e) => { setNotifications((prev) => ({ ...prev, test_email: e.target.value })); markDirty(); }}
+                    />
+                    <FieldHelper text="Stored in orgs/{id}/settings. Test invoice/quotation emails are sent only here." />
+                    {notifications.test_email && !isValidTestEmail(notifications.test_email) && (
+                      <p className="text-xs text-destructive">Enter a valid email address.</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!isValidTestEmail(notifications.test_email || '') || sendingTest !== null}
+                      onClick={() => sendTestDocument('invoice')}
+                    >
+                      {sendingTest === 'invoice' ? 'Sending…' : 'Send test invoice'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!isValidTestEmail(notifications.test_email || '') || sendingTest !== null}
+                      onClick={() => sendTestDocument('quotation')}
+                    >
+                      {sendingTest === 'quotation' ? 'Sending…' : 'Send test quotation'}
+                    </Button>
+                  </div>
+                  {!isValidTestEmail(notifications.test_email || '') && (
+                    <p className="text-xs text-muted-foreground">Add a test email in Settings</p>
+                  )}
                 </div>
               </CollapsibleSection>
             </CardContent>
@@ -1019,6 +1105,9 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <PrefixSelect value={branding.quote_prefix} onValueChange={(v) => { setBranding((p) => ({ ...p, quote_prefix: v })); markDirty(); }} presets={PREFIX_PRESETS} label="Quote Prefix" />
                     <PrefixSelect value={branding.invoice_prefix} onValueChange={(v) => { setBranding((p) => ({ ...p, invoice_prefix: v })); markDirty(); }} presets={INVOICE_PREFIX_PRESETS} label="Invoice Prefix" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <PrefixSelect value={branding.credit_note_prefix} onValueChange={(v) => { setBranding((p) => ({ ...p, credit_note_prefix: v })); markDirty(); }} presets={CREDIT_NOTE_PREFIX_PRESETS} label="Credit Note Prefix" />
                   </div>
                   <Separator />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
