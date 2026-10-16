@@ -1,0 +1,122 @@
+/**
+ * Offline self-test for pure business logic (no Firebase needed).
+ * Usage: npm run selftest
+ * Exits non-zero on the first failure.
+ */
+import {
+  buildAssignWorkUpdate,
+  calcTotals,
+  deriveInvoiceStatus,
+  fmtMoney,
+  formatNumber,
+  InsufficientStockError,
+  invoiceOutstanding,
+  isMapsUrl,
+} from "../src/lib/db";
+
+let failures = 0;
+function check(name: string, cond: boolean, extra?: unknown) {
+  if (cond) {
+    console.log(`ok - ${name}`);
+  } else {
+    failures += 1;
+    console.error(`FAIL - ${name}`, extra ?? "");
+  }
+}
+
+// --- maps URL validation ---
+check("google maps?q accepted", isMapsUrl("https://www.google.com/maps?q=9.9816,76.2999"));
+check("maps.google.com accepted", isMapsUrl("https://maps.google.com/?q=9.98,76.29"));
+check("goo.gl share accepted", isMapsUrl("https://maps.app.goo.gl/abcDEF123"));
+check("non-map rejected", !isMapsUrl("https://example.com/maps?q=1,2"));
+check("empty rejected", !isMapsUrl(""));
+check("javascript rejected", !isMapsUrl("javascript:alert(1)"));
+
+// --- totals ---
+const t = calcTotals(
+  [
+    { description: "A", quantity: 2, unitPrice: 100 },
+    { description: "B", quantity: 1, unitPrice: 50 },
+  ],
+  18,
+  25,
+);
+check("subtotal 250", t.subtotal === 250);
+check("discount 25", t.discount === 25);
+check("tax 40.5", t.tax === 40.5, t);
+check("total 265.5", t.total === 265.5, t);
+
+// --- invoice status derivation ---
+check("paid", deriveInvoiceStatus({ total: 100, amountPaid: 100 }) === "Paid");
+check("partial", deriveInvoiceStatus({ total: 100, amountPaid: 40 }) === "Partial");
+check("unpaid future", deriveInvoiceStatus({ total: 100, amountPaid: 0, dueDate: "2099-01-01" }) === "Unpaid");
+check("overdue", deriveInvoiceStatus({ total: 100, amountPaid: 0, dueDate: "2020-01-01" }) === "Overdue");
+check("outstanding", invoiceOutstanding({ total: 100, amountPaid: 30 }) === 70);
+check("money format", fmtMoney(123456) === "₹1,23,456");
+check("number format", formatNumber("INV", 7, 2026) === "INV-2026-0007");
+
+// --- assign-work atomic builder ---
+const products = [
+  { id: "p1", name: "Rice Bag", price: 100, stock: 10 },
+  { id: "p2", name: "Oil Can", price: 200, stock: 1 },
+];
+const built = buildAssignWorkUpdate(
+  {
+    workerId: "w1",
+    workerName: "W",
+    clientId: "c1",
+    clientName: "C",
+    type: "Delivery",
+    scheduledAt: "2026-10-20T10:00:00.000Z",
+    mapsUrl: "https://www.google.com/maps?q=9.98,76.29",
+    items: [{ productId: "p1", quantity: 3 }],
+    orderNumber: "ORD-2026-0001",
+    invoiceNumber: "INV-2026-0001",
+  },
+  products,
+  18,
+);
+const paths = Object.keys(built.updates);
+check("task created", paths.some((p) => p.startsWith("tasks/")));
+check("order created", paths.some((p) => p.startsWith("orders/")));
+check("delivery pending", Object.entries(built.updates).some(([p, v]) => p.startsWith("deliveries/") && (v as { status: string }).status === "Pending"));
+check("invoice unpaid", Object.entries(built.updates).some(([p, v]) => p.startsWith("invoices/") && (v as { status: string }).status === "Unpaid"));
+check("stock deducted 10->7", built.updates["products/p1/stock"] === 7, built.updates["products/p1/stock"]);
+check("order total 354", (built.updates[`orders/${built.ids.orderId}`] as { total: number }).total === 354);
+check(
+  "4 history entries",
+  paths.filter((p) => p.startsWith("history/")).length === 4,
+  paths.filter((p) => p.startsWith("history/")),
+);
+check("history has no undefined", !paths.some((p) => p.includes("undefined")));
+
+let threw: unknown = null;
+try {
+  buildAssignWorkUpdate(
+    {
+      workerId: "w1",
+      clientId: "c1",
+      type: "Delivery",
+      scheduledAt: "2026-10-20T10:00:00.000Z",
+      items: [{ productId: "p2", quantity: 5 }],
+      orderNumber: "ORD-1",
+      invoiceNumber: "INV-1",
+    },
+    products,
+    18,
+  );
+} catch (e) {
+  threw = e;
+}
+check("short stock throws InsufficientStockError", threw instanceof InsufficientStockError, threw);
+check(
+  "short item named",
+  threw instanceof InsufficientStockError && threw.short[0]?.name === "Oil Can",
+  threw instanceof InsufficientStockError ? threw.short : threw,
+);
+
+if (failures > 0) {
+  console.error(`${failures} failure(s)`);
+  process.exit(1);
+}
+console.log("selftest: all passed");
