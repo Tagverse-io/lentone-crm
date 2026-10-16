@@ -9,7 +9,8 @@ import {
   MoreHorizontal, Eye, Pencil, Trash
 } from 'lucide-react';
 import { createPayment, updatePayment, deletePayment, subscribeToPayments } from '@/lib/db/payments/api';
-import { subscribeToCompanies } from '@/lib/db/companies/api';
+import { clientsService, creditNotesService } from '@/lib/backend-crud';
+import type { CreditNote } from '@/lib/types';
 import { subscribeToContacts } from '@/lib/db/contacts/api';
 import {
   DropdownMenu,
@@ -34,6 +35,7 @@ export default function PaymentsPage() {
   const fmt = useFmt();
   const workspaceId = workspace?.id || '';
   const [payments, setPayments] = useState<NormalizedPayment[]>([]);
+  const [creditNoteOptions, setCreditNoteOptions] = useState<CreditNote[]>([]);
   const [entityMap, setEntityMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -58,10 +60,10 @@ export default function PaymentsPage() {
       setLoading(false);
     });
     
-    const unsubscribeCompanies = subscribeToCompanies(workspaceId, (companies) => {
+    const unsubscribeClients = clientsService.subscribe(workspaceId, (clients) => {
       setEntityMap(prev => {
         const newMap = { ...prev };
-        companies.forEach(c => newMap[c.id] = c.name);
+        clients.forEach(c => { newMap[c.id] = c.name; });
         return newMap;
       });
     });
@@ -74,10 +76,15 @@ export default function PaymentsPage() {
       });
     });
 
+    const unsubscribeCreditNotes = creditNotesService.subscribe(workspaceId, (notes) => {
+      setCreditNoteOptions(notes);
+    });
+
     return () => {
       unsubscribePayments();
-      unsubscribeCompanies();
+      unsubscribeClients();
       unsubscribeContacts();
+      unsubscribeCreditNotes();
     };
   }, [workspaceId]);
 
@@ -91,13 +98,19 @@ export default function PaymentsPage() {
     method: PaymentMethod;
     status: PaymentStatus;
     payment_type: 'income' | 'expense';
+    reference: string;
+    notes: string;
+    creditNoteId: string;
   }>({
     client: '',
     invoiceId: '',
     amount: '',
     method: 'upi',
     status: 'completed',
-    payment_type: 'income'
+    payment_type: 'income',
+    reference: '',
+    notes: '',
+    creditNoteId: '',
   });
 
   // Derived state
@@ -130,8 +143,9 @@ export default function PaymentsPage() {
       if (statusFilter !== 'All' && p.status !== statusFilter) return false;
       if (search) {
         const query = search.toLowerCase();
-        return (p.company_id || '').toLowerCase().includes(query) || 
-               (p.contact_id || '').toLowerCase().includes(query) || 
+        return (p.client_id || '').toLowerCase().includes(query) ||
+               (p.company_id || '').toLowerCase().includes(query) ||
+               (p.contact_id || '').toLowerCase().includes(query) ||
                (p.invoice_id || '').toLowerCase().includes(query);
       }
       return true;
@@ -154,8 +168,8 @@ export default function PaymentsPage() {
     try {
       if (!workspaceId) throw new Error("No workspace found");
       const paymentData = {
-        company_id: form.client,
-        invoice_id: form.invoiceId,
+        client_id: form.client,
+        invoice_id: form.invoiceId.trim(),
         amount: parseFloat(form.amount),
         method: form.method,
         status: form.status,
@@ -165,8 +179,9 @@ export default function PaymentsPage() {
         contact_id: '',
         quote_id: '',
         deal_id: '',
-        reference: '',
-        notes: ''
+        reference: form.reference.trim(),
+        notes: form.notes.trim(),
+        credit_note_id: form.creditNoteId || undefined
       };
 
       if (editingPaymentId) {
@@ -176,15 +191,18 @@ export default function PaymentsPage() {
         const created = await createPayment(workspaceId, paymentData);
         toast.success('Payment recorded successfully');
         // Event-driven automation: update invoice totals/status (idempotent).
-        try {
-          await backend.paymentReceived(workspaceId, created.payment_id);
-        } catch {
-          toast.error('Payment saved, but invoice automation failed');
+        // Skip when unallocated (no invoice).
+        if (created.invoice_id) {
+          try {
+            await backend.paymentReceived(workspaceId, created.payment_id);
+          } catch {
+            toast.error('Payment saved, but invoice automation failed');
+          }
         }
       }
       setModalOpen(false);
       setEditingPaymentId(null);
-      setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income' });
+      setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income', reference: '', notes: '', creditNoteId: '' });
     } catch (error) {
       toast.error('Failed to save payment');
     }
@@ -221,7 +239,7 @@ export default function PaymentsPage() {
         <button 
           onClick={() => {
             setEditingPaymentId(null);
-            setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income' });
+            setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income', reference: '', notes: '', creditNoteId: '' });
             setModalOpen(true);
           }}
           className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-md font-medium text-sm flex items-center justify-center gap-2 transition-colors"
@@ -297,7 +315,7 @@ export default function PaymentsPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm text-foreground truncate">{entityMap[txn.company_id || txn.contact_id] || txn.company_id || txn.contact_id}</p>
+                    <p className="font-medium text-sm text-foreground truncate">{entityMap[txn.client_id || txn.company_id || txn.contact_id] || txn.client_id || txn.company_id || txn.contact_id}</p>
                     <span className={`text-sm font-bold ${
                       txn.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
                       txn.status === 'failed' ? 'text-rose-600 dark:text-rose-400' :
@@ -363,7 +381,7 @@ export default function PaymentsPage() {
                 <tbody>
                   {pendingFollowUps.map((p, i) => (
                     <tr key={i} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
-                      <td className="p-3 py-2 font-medium">{entityMap[p.company_id || p.contact_id] || p.company_id || p.contact_id}</td>
+                      <td className="p-3 py-2 font-medium">{entityMap[p.client_id || p.company_id || p.contact_id] || p.client_id || p.company_id || p.contact_id}</td>
                       <td className="p-3 py-2 text-right">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                           p.status === 'failed' 
@@ -448,11 +466,12 @@ export default function PaymentsPage() {
                 <tr key={txn.payment_id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground hidden md:table-cell">PAY-{txn.payment_id.slice(-6).toUpperCase()}</td>
                   <td className="px-4 py-3 font-medium">
-                    {txn.company_id ? (entityMap[txn.company_id] || txn.company_id) : 
-                     txn.contact_id ? (entityMap[txn.contact_id] || txn.contact_id) : 
-                     '—'}
+                    {txn.client_id ? (entityMap[txn.client_id] || txn.client_id) :
+                     txn.company_id ? (entityMap[txn.company_id] || txn.company_id) :
+                      txn.contact_id ? (entityMap[txn.contact_id] || txn.contact_id) :
+                      '—'}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-blue-600 dark:text-blue-400 hidden lg:table-cell">{txn.invoice_id}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-blue-600 dark:text-blue-400 hidden lg:table-cell">{txn.invoice_id ? txn.invoice_id : <span className="text-muted-foreground italic">unallocated</span>}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
                       (!txn.payment_type || txn.payment_type === 'income') ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
@@ -490,12 +509,15 @@ export default function PaymentsPage() {
                           <DropdownMenuItem onClick={() => {
                             setEditingPaymentId(txn.payment_id);
                             setForm({
-                              client: txn.company_id || txn.contact_id || '',
-                              invoiceId: txn.invoice_id,
+                              client: txn.client_id || txn.company_id || txn.contact_id || '',
+                              invoiceId: txn.invoice_id || '',
                               amount: txn.amount.toString(),
                               method: txn.method,
                               status: txn.status,
-                              payment_type: txn.payment_type || 'income'
+                              payment_type: txn.payment_type || 'income',
+                              reference: (txn as { reference?: string }).reference || '',
+                              notes: txn.notes || '',
+                              creditNoteId: txn.credit_note_id || ''
                             });
                             setModalOpen(true);
                           }}>
@@ -541,7 +563,7 @@ export default function PaymentsPage() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => {
                   setModalOpen(false);
                   setEditingPaymentId(null);
-                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income' });
+                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income', reference: '', notes: '', creditNoteId: '' });
                 }}></div>
           <div className="bg-background rounded-xl border shadow-lg w-full max-w-md relative z-10 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-5 border-b">
@@ -549,7 +571,7 @@ export default function PaymentsPage() {
               <button onClick={() => {
                   setModalOpen(false);
                   setEditingPaymentId(null);
-                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income' });
+                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income', reference: '', notes: '', creditNoteId: '' });
                 }} className="text-muted-foreground hover:bg-muted p-1 rounded-md transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -567,10 +589,10 @@ export default function PaymentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Invoice ID</label>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Invoice ID <span className="normal-case font-medium">(optional — blank = unallocated)</span></label>
                 <input 
                   type="text" 
-                  placeholder="e.g. INV-2091" 
+                  placeholder="e.g. INV-2091 — leave blank for unallocated" 
                   className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
                   value={form.invoiceId}
                   onChange={(e) => setForm({...form, invoiceId: e.target.value})}
@@ -629,6 +651,40 @@ export default function PaymentsPage() {
                     <option value="expense">Operation Bill (Expense)</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Reference</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. UTR / cheque no."
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                    value={form.reference}
+                    onChange={(e) => setForm({ ...form, reference: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Notes</label>
+                  <textarea
+                    placeholder="Payment notes…"
+                    rows={2}
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Linked credit note (optional)</label>
+                  <select
+                    className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
+                    value={form.creditNoteId}
+                    onChange={(e) => setForm({ ...form, creditNoteId: e.target.value })}
+                  >
+                    <option value="">None</option>
+                    {creditNoteOptions.map((cn) => (
+                      <option key={cn.id} value={cn.id}>{cn.number} · {cn.status}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">A refund linked to an applied note never reduces the invoice twice.</p>
+                </div>
               </div>
               <div className="flex justify-end gap-3 pt-4 border-t mt-6">
                 <button 
@@ -636,7 +692,7 @@ export default function PaymentsPage() {
                   onClick={() => {
                   setModalOpen(false);
                   setEditingPaymentId(null);
-                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income' });
+                  setForm({ client: '', invoiceId: '', amount: '', method: 'upi', status: 'completed', payment_type: 'income', reference: '', notes: '', creditNoteId: '' });
                 }}
                   className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-md transition-colors"
                 >
@@ -673,9 +729,10 @@ export default function PaymentsPage() {
               <div className="flex items-center justify-between pb-3 border-b">
                 <span className="text-muted-foreground">Client / Vendor</span>
                 <span className="font-medium">
-                  {viewingPayment.company_id ? (entityMap[viewingPayment.company_id] || viewingPayment.company_id) : 
-                   viewingPayment.contact_id ? (entityMap[viewingPayment.contact_id] || viewingPayment.contact_id) : 
-                   '—'}
+                  {viewingPayment.client_id ? (entityMap[viewingPayment.client_id] || viewingPayment.client_id) :
+                   viewingPayment.company_id ? (entityMap[viewingPayment.company_id] || viewingPayment.company_id) :
+                    viewingPayment.contact_id ? (entityMap[viewingPayment.contact_id] || viewingPayment.contact_id) :
+                    '—'}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -685,7 +742,7 @@ export default function PaymentsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Invoice ID</p>
-                  <p className="font-medium text-blue-600 dark:text-blue-400">{viewingPayment.invoice_id}</p>
+                  <p className="font-medium text-blue-600 dark:text-blue-400">{viewingPayment.invoice_id ? viewingPayment.invoice_id : <span className="text-muted-foreground italic">unallocated</span>}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Amount</p>
@@ -708,6 +765,18 @@ export default function PaymentsPage() {
                   }`}>
                     {viewingPayment.status}
                   </span>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Reference</p>
+                  <p className="font-medium">{(viewingPayment as { reference?: string }).reference || '—'}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">Notes</p>
+                  <p className="font-medium whitespace-pre-wrap">{viewingPayment.notes || '—'}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">Linked credit note</p>
+                  <p className="font-medium">{viewingPayment.credit_note_id || '—'}</p>
                 </div>
               </div>
             </div>

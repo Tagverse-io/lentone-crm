@@ -309,7 +309,7 @@ export async function getOverdueInvoices(
   return invoices.filter(invoice => {
     if (!invoice.due_date) return false;
     const dueDate = new Date(invoice.due_date);
-    return dueDate < now && invoice.status !== 'paid' && invoice.status !== 'cancelled';
+    return dueDate < now && invoice.status !== 'paid' && invoice.status !== 'cancelled' && invoice.status !== 'credited';
   });
 }
 
@@ -329,7 +329,7 @@ export async function getInvoicesDueSoon(
     if (!invoice.due_date) return false;
     const dueDate = new Date(invoice.due_date);
     return dueDate >= now && dueDate <= futureDate && 
-           invoice.status !== 'paid' && invoice.status !== 'cancelled';
+           invoice.status !== 'paid' && invoice.status !== 'cancelled' && invoice.status !== 'credited';
   });
 }
 
@@ -361,7 +361,7 @@ export async function getInvoiceStats(
   const totalValue = invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
   const totalPaid = invoices.reduce((sum, inv) => sum + (inv.amount_paid || 0), 0);
   const totalPending = invoices
-    .filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled')
+    .filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled' && inv.status !== 'credited')
     .reduce((sum, inv) => sum + (inv.amount_due || 0), 0);
   const totalOverdue = invoices
     .filter(inv => inv.status === 'overdue')

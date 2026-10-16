@@ -1289,34 +1289,8 @@ export async function getTasks(workspaceId?: string): Promise<TaskItem[]> {
   try {
     if (workspaceId) {
       const tasksMap = new Map<string, TaskItem>();
-      
-      // 1. Fetch from company_tasks
-      const companyTasksRef = ref(database, `company_tasks/${workspaceId}`);
-      const companyTasksSnap = await get(companyTasksRef);
-      if (companyTasksSnap.exists()) {
-        const cData = companyTasksSnap.val();
-        for (const [key, val] of Object.entries(cData)) {
-          if (val && typeof val === 'object') {
-            const t = val as any;
-            tasksMap.set(key, {
-              id: key,
-              workspace_id: workspaceId,
-              title: t.title || t.name || 'Untitled Task',
-              description: t.description || '',
-              status: (t.status || 'To Do').toLowerCase(),
-              priority: (t.priority || 'medium').toLowerCase() as any,
-              due_date: t.dueDate || t.due_date || '',
-              dueDate: t.dueDate || t.due_date || '',
-              assignee_id: t.assignee?.id || (t.assignees && t.assignees[0]?.id) || '',
-              assignee_name: t.assignee?.name || (t.assignees && t.assignees[0]?.name) || '',
-              created_at: t.created_at || new Date().toISOString(),
-              updated_at: t.updated_at || new Date().toISOString(),
-            } as TaskItem);
-          }
-        }
-      }
 
-      // 2. Fetch from orgs/tasks
+      // Tasks live under orgs/{id}/tasks (normalized below for mixed shapes).
       const refPath = wsRef(workspaceId, 'tasks');
       const snapshot = await get(refPath);
       if (snapshot.exists()) {
@@ -1329,6 +1303,8 @@ export async function getTasks(workspaceId?: string): Promise<TaskItem[]> {
               ...t,
               dueDate: t.dueDate || t.due_date || '',
               due_date: t.due_date || t.dueDate || '',
+              assignee_id: t.assignee_id || t.assignee?.id || (t.assignees && t.assignees[0]?.id) || '',
+              assignee_name: t.assignee_name || t.assignee?.name || (t.assignees && t.assignees[0]?.name) || '',
             } as TaskItem);
           }
         }

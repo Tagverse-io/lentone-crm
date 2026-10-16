@@ -15,7 +15,6 @@ import { database as db } from '@/lib/firebase/config';
 import { NormalizedQuote, QuoteItem, NormalizedQuoteStatus } from '../types';
 import { emitEvent } from '../events';
 import { getCurrentUserId } from '@/lib/firebase/auth';
-import { getCompany } from '../companies/api';
 
 // ===== Collection Reference =====
 function quotesRef(workspaceId: string) {

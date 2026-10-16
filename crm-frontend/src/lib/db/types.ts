@@ -52,7 +52,7 @@ export type PriorityLevel = 'low' | 'medium' | 'high';
 
 export type MeetingStatus = 'pending' | 'accepted' | 'declined' | 'completed';
 
-export type InvoiceStatus = 'pending' | 'paid' | 'overdue' | 'cancelled' | 'partially_paid' | 'overpaid';
+export type InvoiceStatus = 'pending' | 'paid' | 'overdue' | 'cancelled' | 'partially_paid' | 'overpaid' | 'credited';
 
 export type ContractTemplateType = 'employment' | 'nda' | 'service' | 'subscription' | 'vendor';
 export type ContractStatus = 'draft' | 'sent' | 'active' | 'expiring' | 'terminated';
@@ -275,6 +275,7 @@ export interface Invoice {
   client_email?: string;
   client_company?: string;
   client_address?: string;
+  client_phone?: string;
   payment_qr_url?: string;
   payment_method?: string;
   payment_terms?: string;
@@ -535,6 +536,7 @@ export interface Quotation {
   client_email?: string;
   client_company?: string;
   client_address?: string;
+  client_phone?: string;
   client_is_company?: boolean;
 
   created_at: string;
@@ -1147,7 +1149,7 @@ export interface InvoiceItem {
   tax_rate: number;
 }
 
-export type NormalizedInvoiceStatus = 
+export type NormalizedInvoiceStatus =
   | 'draft'
   | 'pending'
   | 'sent'
@@ -1155,6 +1157,7 @@ export type NormalizedInvoiceStatus =
   | 'overdue'
   | 'paid'
   | 'partially_paid'
+  | 'credited'
   | 'cancelled';
 
 // ===== PAYMENT (Enhanced) =====
@@ -1162,7 +1165,8 @@ export interface NormalizedPayment {
   payment_type?: string;
   payment_id: string;
   workspace_id: string;
-  company_id?: string; // FK → Company
+  client_id?: string; // FK → Client (required on create; Company is dropped)
+  company_id?: string; // Legacy (read fallback only)
   contact_id: string; // FK → Contact
   invoice_id: string; // FK → Invoice
   quote_id: string; // FK → Quote
@@ -1171,10 +1175,12 @@ export interface NormalizedPayment {
   // Amount
   amount: number;
   currency: string;
-  
   // Method
   method: PaymentMethod;
   reference: string;
+  // Optional link to a credit note (refund leg). A linked refund never
+  // reduces the invoice twice — the applied note already reduced it.
+  credit_note_id?: string;
   
   // Status
   status: PaymentStatus;

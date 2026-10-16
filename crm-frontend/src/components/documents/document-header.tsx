@@ -22,6 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-700',
   paid: 'bg-green-100 text-green-700',
   partially_paid: 'bg-yellow-100 text-yellow-700',
+  credited: 'bg-teal-100 text-teal-700',
   overdue: 'bg-red-100 text-red-700',
   cancelled: 'bg-gray-100 text-gray-500',
   expired: 'bg-orange-100 text-orange-700',
@@ -114,6 +115,7 @@ export function DocumentHeader({
                   <SelectItem value="viewed">Viewed</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                  <SelectItem value="credited">Credited</SelectItem>
                   <SelectItem value="overdue">Overdue</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </>

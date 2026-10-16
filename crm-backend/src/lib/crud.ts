@@ -11,7 +11,7 @@ export const ENTITIES = [
   "leads", "clients", "contacts", "followUps", "quotations", "invoices",
   "payments", "projects", "tasks", "socialAccounts", "posts",
   "videoProductions", "events", "notifications", "users", "automationsLog",
-  "roles",
+  "roles", "expenses", "creditNotes",
 ] as const;
 
 export type EntityName = (typeof ENTITIES)[number];
@@ -30,13 +30,13 @@ interface EntityDef {
 }
 
 const DEFS: Record<EntityName, EntityDef> = {
-  leads: { idFields: [], ts: "snake", required: ["name", "email"] },
-  clients: { idFields: [], ts: "camel", required: ["name", "email"] },
+  leads: { idFields: [], ts: "snake", required: ["name"] },
+  clients: { idFields: [], ts: "camel", required: ["name"] },
   contacts: { idFields: ["contact_id"], ts: "snake", required: ["name", "email"] },
   followUps: { idFields: [], ts: "camel", required: ["title", "dueAt"] },
   quotations: { idFields: ["quote_id"], ts: "snake", required: ["quotation_number"] },
   invoices: { idFields: ["invoice_id"], ts: "snake", required: ["invoice_number"] },
-  payments: { idFields: ["payment_id"], ts: "snake", required: ["amount"] },
+  payments: { idFields: ["payment_id"], ts: "snake", required: ["amount", "client_id"] },
   projects: { idFields: [], ts: "snake", required: ["title"] },
   tasks: { idFields: [], ts: "snake", required: ["title"] },
   socialAccounts: { idFields: [], ts: "camel", required: ["handle"] },
@@ -47,6 +47,8 @@ const DEFS: Record<EntityName, EntityDef> = {
   users: { idFields: ["uid"], ts: "camel", uidKeyed: true, required: ["email"] },
   automationsLog: { idFields: [], ts: "camel", required: ["name"] },
   roles: { idFields: [], ts: "snake", required: ["name"] },
+  expenses: { idFields: [], ts: "camel", required: ["date", "amount", "category"] },
+  creditNotes: { idFields: [], ts: "camel", required: ["invoiceId", "amount"] },
 };
 
 export type CrudRecord = Record<string, unknown> & { id: string };
@@ -102,13 +104,16 @@ export async function crudGet(orgId: string, entity: EntityName, id: string): Pr
 export async function crudCreate(orgId: string, entity: EntityName, data: Record<string, unknown>): Promise<CrudRecord> {
   const input = { ...data };
   // Settings-driven defaults for documents created via REST/MCP.
-  if (entity === "invoices" || entity === "quotations") {
+  if (entity === "invoices" || entity === "quotations" || entity === "creditNotes") {
     const { getOrgSettings } = await import("./settings");
     const { nextNumber, dueDateFromSettings } = await import("./numbering");
     const s = await getOrgSettings(orgId);
-    const numField = entity === "invoices" ? "invoice_number" : "quotation_number";
-    if (!input[numField]) input[numField] = await nextNumber(orgId, entity === "invoices" ? "invoice" : "quote");
-    if (!input.currency) input.currency = s.general.default_currency;
+    const numField = entity === "invoices" ? "invoice_number" : entity === "quotations" ? "quotation_number" : "number";
+    if (!input[numField]) {
+      input[numField] = await nextNumber(orgId, entity === "invoices" ? "invoice" : entity === "quotations" ? "quote" : "creditNote");
+    }
+    if (entity === "creditNotes" && !input.status) input.status = "issued";
+    if (!input.currency && entity !== "creditNotes") input.currency = s.general.default_currency;
     if (entity === "invoices") {
       if (!input.due_date) input.due_date = await dueDateFromSettings(orgId);
       if (!input.payment_terms) input.payment_terms = s.branding.default_payment_terms;

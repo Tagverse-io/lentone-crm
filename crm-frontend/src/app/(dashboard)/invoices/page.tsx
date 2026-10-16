@@ -38,6 +38,7 @@ const statusStyles: Record<string, string> = {
   paid: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
   overdue: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400',
   cancelled: 'bg-muted text-muted-foreground',
+  credited: 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-400',
 };
 
 const PAGE_SIZE = 25;
@@ -139,6 +140,7 @@ export default function InvoicesPage() {
             <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="overdue">Overdue</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="credited">Credited</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -203,7 +205,7 @@ export default function InvoicesPage() {
                         <DropdownMenuItem onClick={() => router.push(`/invoices/${inv.id}`)}>
                           <Pencil size={14} className="mr-2" /> Edit
                         </DropdownMenuItem>
-                        {inv.status !== 'paid' && (
+                        {inv.status !== 'paid' && inv.status !== 'credited' && (
                           <DropdownMenuItem onClick={() => toast.info('Online payments are handled by recording a payment under Payments')}>
                             <CreditCard size={14} className="mr-2" /> Record payment
                           </DropdownMenuItem>
