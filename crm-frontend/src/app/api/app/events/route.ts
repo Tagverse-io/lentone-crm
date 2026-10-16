@@ -3,11 +3,10 @@ import { z } from "zod";
 import { timingSafeEqual } from "crypto";
 import { getAdminDatabase } from "@/lib/firebase-admin";
 import { getServerEnv } from "@/lib/env";
+import { isMapsUrl } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAPS_URL_RE = /^https:\/\/www\.google\.com\/maps\?q=-?\d+(\.\d+)?,-?\d+(\.\d+)?$/;
 
 /** Max decoded proof-photo size: 500 KB. Anything bigger is rejected. */
 const MAX_PROOF_BYTES = 500 * 1024;
@@ -75,6 +74,11 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getAdminDatabase();
+  const stamp = new Date().toISOString();
+  const by = e.workerName ?? e.workerId;
+  const hist = async (entity: string, id: string, action: string, detail?: string) => {
+    await db.ref(`history/${entity}/${id}`).push({ action, ...(detail ? { detail } : {}), at: stamp, by });
+  };
 
   try {
     switch (e.event) {
@@ -87,7 +91,7 @@ export async function POST(req: NextRequest) {
           ...(e.workerName ? { name: e.workerName } : {}),
           ...(e.phone ? { phone: e.phone } : {}),
           active: true,
-          updatedAt: new Date().toISOString(),
+          updatedAt: stamp,
         });
         if (e.event === "login") {
           await attRef.update({ date, loginAt: e.timestamp });
@@ -105,8 +109,8 @@ export async function POST(req: NextRequest) {
       }
 
       case "location": {
-        if (!e.mapsUrl || !MAPS_URL_RE.test(e.mapsUrl)) {
-          return NextResponse.json({ error: "mapsUrl: must be a Google Maps URL (https://www.google.com/maps?q=lat,lng)" }, { status: 400 });
+        if (!e.mapsUrl || !isMapsUrl(e.mapsUrl)) {
+          return NextResponse.json({ error: "mapsUrl: must be a Google Maps link (maps.google.com, google.com/maps or maps.app.goo.gl)" }, { status: 400 });
         }
         const latest = { mapsUrl: e.mapsUrl, timestamp: e.timestamp, ...(e.workerName ? { workerName: e.workerName } : {}) };
         await db.ref(`locations/${e.workerId}/latest`).set(latest);
@@ -125,7 +129,8 @@ export async function POST(req: NextRequest) {
         if (task.workerId && task.workerId !== e.workerId) {
           return NextResponse.json({ error: "Task is not assigned to this worker" }, { status: 403 });
         }
-        await db.ref(`tasks/${e.taskId}`).update({ status: e.status, updatedAt: new Date().toISOString() });
+        await db.ref(`tasks/${e.taskId}`).update({ status: e.status, updatedAt: stamp });
+        await hist("tasks", e.taskId, `Status → ${e.status}`, `via Expo app (${by})`);
         return NextResponse.json({ ok: true });
       }
 
@@ -136,10 +141,10 @@ export async function POST(req: NextRequest) {
         }
         const delSnap = await db.ref(`deliveries/${e.deliveryId}`).get();
         if (!delSnap.exists()) return NextResponse.json({ error: "Delivery not found" }, { status: 404 });
-        const patch: Record<string, unknown> = { status: e.status, updatedAt: new Date().toISOString() };
+        const patch: Record<string, unknown> = { status: e.status, updatedAt: stamp };
         if (e.mapsUrl) {
-          if (!MAPS_URL_RE.test(e.mapsUrl)) {
-            return NextResponse.json({ error: "mapsUrl: must be a Google Maps URL (https://www.google.com/maps?q=lat,lng)" }, { status: 400 });
+          if (!isMapsUrl(e.mapsUrl)) {
+            return NextResponse.json({ error: "mapsUrl: must be a Google Maps link (maps.google.com, google.com/maps or maps.app.goo.gl)" }, { status: 400 });
           }
           patch.mapsUrl = e.mapsUrl;
         }
@@ -155,10 +160,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "proofBase64: photo exceeds 500 KB after app-side compression" }, { status: 413 });
           }
           // Stored ONLY at /deliveryProofs/{deliveryId} — never under a listed path.
-          await db.ref(`deliveryProofs/${e.deliveryId}`).set({ proofBase64: raw, updatedAt: new Date().toISOString() });
+          await db.ref(`deliveryProofs/${e.deliveryId}`).set({ proofBase64: raw, updatedAt: stamp });
           patch.proofAt = e.timestamp;
         }
         await db.ref(`deliveries/${e.deliveryId}`).update(patch);
+        await hist("deliveries", e.deliveryId, `Status → ${e.status}`, `via Expo app (${by})`);
+        // Delivered cascades: task Done + order Delivered + history.
+        if (e.status === "Delivered") {
+          const d = delSnap.val() as { taskId?: string; orderId?: string; proofAt?: string };
+          if (d.taskId) {
+            await db.ref(`tasks/${d.taskId}`).update({ status: "Done", updatedAt: stamp });
+            await hist("tasks", d.taskId, "Task done", "Delivery delivered (Expo app)");
+          }
+          if (d.orderId) {
+            await db.ref(`orders/${d.orderId}`).update({ status: "Delivered", updatedAt: stamp });
+            await hist("orders", d.orderId, "Order delivered", `Delivery ${e.deliveryId} (Expo app)`);
+          }
+        }
         return NextResponse.json({ ok: true });
       }
     }

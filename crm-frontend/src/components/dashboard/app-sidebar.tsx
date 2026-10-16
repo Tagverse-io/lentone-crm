@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { subscribeLeads } from '@/lib/db';
+import { getCollection, type Lead } from '@/lib/db';
+import { POLL_SLOW_MS, usePolling } from '@/lib/realtime';
 import { useSidebar } from './sidebar-context';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { brand, logoFilterClass } from '@/brand.config';
@@ -27,6 +28,10 @@ import {
   ChevronDown,
   Truck,
   MapPin,
+  Package,
+  ShoppingCart,
+  Wallet,
+  BarChart3,
   X,
 } from 'lucide-react';
 
@@ -57,6 +62,8 @@ function getNavConfig(openLeadCount: number): { topItems: NavItem[]; groups: Nav
         title: 'Operations',
         items: [
           { title: 'Field Force', href: '/field-force', icon: MapPin },
+          { title: 'Inventory', href: '/inventory', icon: Package },
+          { title: 'Orders', href: '/orders', icon: ShoppingCart },
           { title: 'Delivery', href: '/deliveries', icon: Truck },
         ],
       },
@@ -65,6 +72,8 @@ function getNavConfig(openLeadCount: number): { topItems: NavItem[]; groups: Nav
         items: [
           { title: 'Quotations', href: '/quotes', icon: FileText },
           { title: 'Invoices', href: '/invoices', icon: Receipt },
+          { title: 'Payments', href: '/payments', icon: Wallet },
+          { title: 'Finance', href: '/finance', icon: BarChart3 },
         ],
       },
     ],
@@ -211,17 +220,12 @@ function SidebarNav({ collapsed, onToggleGroup, expandedGroups, leadCount, pathn
 export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
-  const [leadCount, setLeadCount] = useState(0);
   const { user, workspace } = useAuth();
   const companyName = workspace?.name || brand.appName;
 
-  useEffect(() => {
-    const unsub = subscribeLeads(
-      (leads) => setLeadCount(leads.filter((l) => l.stage !== 'Won' && l.stage !== 'Lost').length),
-      () => setLeadCount(0),
-    );
-    return unsub;
-  }, []);
+  // Polling only — no realtime listeners.
+  const { data: leads = [] } = usePolling<Lead[]>('leads-badge', () => getCollection<Lead>('leads'), POLL_SLOW_MS);
+  const leadCount = leads.filter((l) => l.stage !== 'Won' && l.stage !== 'Lost').length;
 
   const { topItems, groups: navGroups } = getNavConfig(leadCount);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(

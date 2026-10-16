@@ -1,8 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "crm-frontend/src/app/api/app/stream/route.ts": {
-      "maxDuration": 60
-    }
-  }
-}
+{ "$schema": "https://openapi.vercel.sh/vercel.json" }

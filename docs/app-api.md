@@ -11,6 +11,12 @@ Authorization: Bearer <APP_API_KEY>
 
 `APP_API_KEY` is a server-only env var (Vercel project settings, never shipped in the app binary — inject at build time via EAS secrets).
 
+## Polling model (no WebSockets, no SSE)
+
+- The Expo app polls **`GET /api/app/tasks?workerId=` every 30 seconds** for its open tasks and deliveries.
+- The web UI polls Firebase directly (SWR: 15s on hot lists, 60s elsewhere, paused when the tab is hidden).
+- All realtime plumbing lives in `crm-frontend/src/lib/realtime.ts` so the transport can be swapped later.
+
 ## POST /api/app/events
 
 Expo app → ERP webhook. Body (JSON, validated with zod):
@@ -48,6 +54,7 @@ Expo app → ERP webhook. Body (JSON, validated with zod):
 }
 ```
 
+- Accepts `maps.google.com`, `google.com/maps` and `maps.app.goo.gl` links (validated server-side).
 - Updates `/locations/{workerId}/latest` and pushes `/locations/{workerId}/history/{pushId}`.
 - The web UI renders `mapsUrl` as a clickable **"View location"** link (`target="_blank"`, Google Maps). No embedded map, no map SDK.
 
@@ -57,7 +64,8 @@ Expo app → ERP webhook. Body (JSON, validated with zod):
 { "workerId": "w1", "event": "task_update", "taskId": "task-123", "status": "Done", "timestamp": "2026-10-16T13:00:00.000Z" }
 ```
 
-`status` is one of `Assigned | In Progress | Done`.
+- `status` is one of `Assigned | In Progress | Done`.
+- Writes a `/history/tasks/{taskId}` entry.
 
 ### Delivery update + proof photo
 
@@ -77,35 +85,24 @@ Expo app → ERP webhook. Body (JSON, validated with zod):
 - The app MUST compress the photo to **at most 800px wide, JPEG quality 0.5** (≈100–200 KB) before base64-encoding.
 - The webhook **rejects anything over 500 KB** (`413`).
 - The base64 is stored **only** at `/deliveryProofs/{deliveryId}` (`{ proofBase64, updatedAt }`) — never under a listed path. The web UI loads it only when the thumbnail is clicked.
-- On `Delivered` with a photo, the delivery also records `proofAt`.
+- On `Delivered`, the webhook also records a history entry and cascades: linked task → `Done`, linked order → `Delivered` (each with its own history entry) — the same cascade the web “Mark delivered” button runs.
 
 ## GET /api/app/tasks?workerId={id}
 
-Returns the worker's open tasks and deliveries:
+Returns the worker's open tasks and deliveries (poll every 30s):
 
 ```json
 {
-  "tasks": [{ "id": "...", "clientName": "...", "type": "visit", "dueDate": "2026-10-16", "status": "Assigned" }],
-  "deliveries": [{ "id": "...", "clientName": "...", "status": "Out for Delivery" }]
+  "tasks": [{ "id": "...", "clientName": "...", "type": "Visit", "scheduledAt": "2026-10-16T10:00:00.000Z", "mapsUrl": "https://…", "status": "Assigned" }],
+  "deliveries": [{ "id": "...", "clientName": "...", "mapsUrl": "https://…", "status": "Out for Delivery" }]
 }
 ```
 
-Used by the app task list and by the web SSE fallback poller (every 30s).
-
-## GET /api/app/stream?workerId={id}
-
-Server-Sent Events stream of changes for that worker. Events:
-
-```
-event: message
-data: {"type":"tasks","at":"2026-10-16T14:00:00.000Z"}
-```
-
-The client auto-reconnects (native `EventSource` retry) and falls back to polling `GET /api/app/tasks` every 30s. See `lib/realtime.ts` (`subscribeWorkerStream`).
+Tasks created by **Assign Work** carry `scheduledAt`, `mapsUrl`, and links (`orderId`, `deliveryId`, `invoiceId`); deliveries carry `mapsUrl` for the drop location.
 
 ## Expo app checklist
 
 - Background location sends `location` events with the Google Maps URL; login/logout events on app open/close.
-- Task list reads `GET /api/app/tasks?workerId=`; refresh on each SSE message; 30s poll fallback.
+- Task list reads `GET /api/app/tasks?workerId=` every 30 seconds.
 - Proof photo screen: compress → base64 → `delivery_update` event.
 - "Open in Google Maps" button uses `Linking.openURL(mapsUrl)` only. No map SDK.

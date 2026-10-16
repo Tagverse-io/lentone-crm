@@ -1,92 +1,110 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, ExternalLink, Camera, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Camera, CheckCircle, ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DELIVERY_STATUSES,
+  collectionQuery,
+  completeDeliveryCascade,
   createItem,
+  filterEqual,
+  fmtMoney,
   getCollection,
   getDeliveryProof,
+  isMapsUrl,
+  logHistory,
+  nameKeyOf,
   removeItem,
-  subscribeDeliveries,
+  splitLegacy,
   updateItem,
   type Client,
   type Delivery,
   type DeliveryStatus,
   type Invoice,
+  type Order,
   type Worker,
 } from '@/lib/db';
-import { EmptyState, LoadingState } from '@/components/ui/states';
+import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
+import { DataTable } from '@/components/ui/data-table';
+import { RecordPreview } from '@/components/record-preview';
 
-const EMPTY = { clientId: '', invoiceId: '', workerId: '', status: 'Pending' as DeliveryStatus, mapsUrl: '' };
+const EMPTY = { clientId: '', invoiceId: '', orderId: '', workerId: '', status: 'Pending' as DeliveryStatus, mapsUrl: '' };
 
 export default function DeliveriesPage() {
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const { data: settings } = useAppSettings();
+  const currency = settings?.currency ?? '₹';
+
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [completing, setCompleting] = useState<string | null>(null);
 
-  // Proof viewer: base64 loads ONLY when a thumbnail is clicked.
   const [proofOpen, setProofOpen] = useState(false);
   const [proofDelivery, setProofDelivery] = useState<Delivery | null>(null);
   const [proofSrc, setProofSrc] = useState<string | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
 
-  useEffect(() => {
+  const [preview, setPreview] = useState<Delivery | null>(null);
+  const [prevRows, setPrevRows] = useState<Delivery[]>([]);
+
+  const fetchRows = useMemo(() => collectionQuery<Delivery>('deliveries', 'createdAt', 'clientKey'), []);
+
+  const loadRefs = () => {
     getCollection<Client>('clients').then(setClients).catch(() => undefined);
     getCollection<Invoice>('invoices').then(setInvoices).catch(() => undefined);
+    getCollection<Order>('orders').then(setOrders).catch(() => undefined);
     getCollection<Worker>('workers').then(setWorkers).catch(() => undefined);
-    return subscribeDeliveries(
-      (list) => {
-        setDeliveries(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
-  }, []);
+  };
 
-  if (loading) return <LoadingState label="Loading deliveries…" />;
-
-  const startCreate = () => { setForm(EMPTY); setOpen(true); };
+  const startCreate = () => {
+    loadRefs();
+    setForm(EMPTY);
+    setOpen(true);
+  };
 
   const save = async () => {
     if (!form.clientId) {
       toast.error('Client is required');
       return;
     }
-    if (form.mapsUrl && !/^https:\/\/www\.google\.com\/maps\?q=-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(form.mapsUrl)) {
-      toast.error('Map URL must look like https://www.google.com/maps?q=lat,lng');
+    if (form.mapsUrl.trim() && !isMapsUrl(form.mapsUrl.trim())) {
+      toast.error('Map URL must be a Google Maps link (maps.google.com, google.com/maps or maps.app.goo.gl)');
       return;
     }
     setSaving(true);
     try {
       const client = clients.find((c) => c.id === form.clientId);
       const worker = workers.find((w) => w.id === form.workerId);
-      await createItem('deliveries', {
+      const inv = invoices.find((i) => i.id === form.invoiceId);
+      const ord = orders.find((o) => o.id === form.orderId);
+      const id = await createItem('deliveries', {
         clientId: form.clientId,
         clientName: client?.name,
-        invoiceId: form.invoiceId || undefined,
+        clientKey: client ? nameKeyOf(client.name) : undefined,
+        invoiceId: form.invoiceId || inv?.id || undefined,
+        orderId: form.orderId || ord?.id || undefined,
         workerId: form.workerId || undefined,
         workerName: worker?.name,
         status: form.status,
-        mapsUrl: form.mapsUrl || undefined,
+        mapsUrl: form.mapsUrl.trim() || undefined,
       });
+      await logHistory('deliveries', id, 'Delivery created', `Status ${form.status}`);
       toast.success('Delivery created');
       setOpen(false);
+      setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -94,23 +112,48 @@ export default function DeliveriesPage() {
     }
   };
 
-  const advance = async (d: Delivery) => {
-    const next: DeliveryStatus =
-      d.status === 'Pending' ? 'Out for Delivery' : d.status === 'Out for Delivery' ? 'Delivered' : 'Pending';
+  const remove = async (d: Delivery) => {
+    if (!window.confirm('Delete this delivery?')) return;
     try {
-      await updateItem('deliveries', d.id, { status: next });
+      await removeItem('deliveries', d.id);
+      toast.success('Delivery deleted');
+      setRefreshKey((k) => k + 1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Update failed');
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
     }
   };
 
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this delivery?')) return;
+  /** Delivered → task Done + order Delivered + history (same cascade as the Expo webhook). */
+  const markDelivered = async (d: Delivery) => {
+    if (d.status === 'Delivered') {
+      toast.success('Already delivered');
+      return;
+    }
+    if (!window.confirm(`Mark delivery for ${d.clientName || 'client'} as Delivered? Linked task and order update too.`)) return;
+    setCompleting(d.id);
     try {
-      await removeItem('deliveries', id);
-      toast.success('Delivery deleted');
+      await completeDeliveryCascade(d.id);
+      toast.success('Delivered — task and order updated');
+      setRefreshKey((k) => k + 1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Delete failed');
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setCompleting(null);
+    }
+  };
+
+  const advance = async (d: Delivery) => {
+    if (d.status === 'Out for Delivery') {
+      await markDelivered(d);
+      return;
+    }
+    const next: DeliveryStatus = d.status === 'Pending' ? 'Out for Delivery' : 'Pending';
+    try {
+      await updateItem('deliveries', d.id, { status: next });
+      await logHistory('deliveries', d.id, `Status → ${next}`);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
     }
   };
 
@@ -135,81 +178,84 @@ export default function DeliveriesPage() {
     }
   };
 
+  const openPreview = async (d: Delivery) => {
+    setPreview(d);
+    try {
+      const all = await filterEqual<Delivery>('deliveries', 'clientId', d.clientId);
+      setPrevRows(splitLegacy(all.filter((x) => x.id !== d.id)).previous);
+    } catch {
+      setPrevRows([]);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Delivery</h1>
-          <p className="text-sm text-muted-foreground">
-            {deliveries.filter((d) => d.status !== 'Delivered').length} open ·{' '}
-            {deliveries.filter((d) => d.status === 'Delivered').length} delivered
-          </p>
-        </div>
-        <Button onClick={startCreate}><Plus size={16} className="mr-2" />New delivery</Button>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Delivery</h1>
+        <p className="text-sm text-muted-foreground">Click a status badge to advance it. Delivering completes the linked task and order. Polls every 15s.</p>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>All deliveries</CardTitle></CardHeader>
-        <CardContent>
-          {deliveries.length === 0 ? (
-            <EmptyState title="No deliveries" description="Link a delivery to an order to track it." />
-          ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <Table className="min-w-[820px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Worker</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Drop location</TableHead>
-                    <TableHead>Proof</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deliveries.map((d) => (
-                    <TableRow key={d.id}>
-                      <TableCell className="font-medium">{d.clientName || '—'}</TableCell>
-                      <TableCell>{d.workerName || '—'}</TableCell>
-                      <TableCell>
-                        <button onClick={() => advance(d)} title="Click to advance status">
-                          <Badge variant={d.status === 'Delivered' ? 'default' : 'secondary'}>{d.status}</Badge>
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        {d.mapsUrl ? (
-                          <a
-                            href={d.mapsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline text-sm"
-                          >
-                            View location <ExternalLink size={14} />
-                          </a>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell>
-                        {d.proofAt ? (
-                          <button
-                            onClick={() => openProof(d)}
-                            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                            title="Click to enlarge"
-                          >
-                            <Camera size={16} /> View proof
-                          </button>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => remove(d.id)} aria-label="Delete delivery"><Trash2 size={16} /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+      <div key={refreshKey}>
+        <DataTable<Delivery>
+          title="All deliveries"
+          queryKey="deliveries"
+          fetchRows={fetchRows}
+          searchPlaceholder="Search client…"
+          filters={[{ field: 'status', label: 'Status', options: DELIVERY_STATUSES.map((s) => ({ value: s, label: s })) }]}
+          defaultPageSize={settings?.defaultRowsPerPage ?? 25}
+          pollMs={POLL_FAST_MS}
+          addLabel="New delivery"
+          onAdd={startCreate}
+          onDelete={remove}
+          onPreview={openPreview}
+          extraActions={(d) => (
+            d.status !== 'Delivered' ? (
+              <Button variant="ghost" size="icon" title="Mark delivered (updates task + order)" aria-label="Mark delivered" onClick={() => markDelivered(d)} disabled={completing === d.id}>
+                <CheckCircle size={16} />
+              </Button>
+            ) : null
           )}
-        </CardContent>
-      </Card>
+          emptyTitle="No deliveries"
+          emptyHint="Link a delivery to an order to track it."
+          columns={[
+            { key: 'clientName', header: 'Client', render: (d) => <span className="font-medium">{d.clientName || '(blank — edit via order)'}</span> },
+            { key: 'workerName', header: 'Worker', render: (d) => d.workerName || '—' },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (d) => (
+                <button onClick={() => advance(d)} title="Click to advance status">
+                  <Badge variant={d.status === 'Delivered' ? 'default' : 'secondary'}>{d.status}</Badge>
+                </button>
+              ),
+            },
+            {
+              key: 'mapsUrl',
+              header: 'Drop location',
+              render: (d) =>
+                d.mapsUrl ? (
+                  <a href={d.mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline text-sm">
+                    View location <ExternalLink size={14} />
+                  </a>
+                ) : (
+                  '—'
+                ),
+            },
+            {
+              key: 'proofAt',
+              header: 'Proof',
+              render: (d) =>
+                d.proofAt ? (
+                  <button onClick={() => openProof(d)} className="inline-flex items-center gap-1 text-sm text-primary hover:underline" title="Click to enlarge">
+                    <Camera size={16} /> View proof
+                  </button>
+                ) : (
+                  '—'
+                ),
+            },
+          ]}
+        />
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -221,11 +267,15 @@ export default function DeliveriesPage() {
               <div className="grid gap-1.5">
                 <Label>Client *</Label>
                 <Select value={form.clientId || 'none'} onValueChange={(v) => setForm({ ...form, clientId: v === 'none' ? '' : v })}>
-                  <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select client" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Select client</SelectItem>
                     {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -233,11 +283,15 @@ export default function DeliveriesPage() {
               <div className="grid gap-1.5">
                 <Label>Worker</Label>
                 <Select value={form.workerId || 'none'} onValueChange={(v) => setForm({ ...form, workerId: v === 'none' ? '' : v })}>
-                  <SelectTrigger><SelectValue placeholder="Select worker" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select worker" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Unassigned</SelectItem>
                     {workers.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -245,37 +299,70 @@ export default function DeliveriesPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label>Order (invoice)</Label>
-                <Select value={form.invoiceId || 'none'} onValueChange={(v) => setForm({ ...form, invoiceId: v === 'none' ? '' : v })}>
-                  <SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger>
+                <Label>Order</Label>
+                <Select value={form.orderId || 'none'} onValueChange={(v) => setForm({ ...form, orderId: v === 'none' ? '' : v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select order" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No order link</SelectItem>
-                    {invoices.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>{i.number} · {i.clientName}</SelectItem>
+                    {orders.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        {o.number} · {o.clientName}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as DeliveryStatus })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Label>Invoice</Label>
+                <Select value={form.invoiceId || 'none'} onValueChange={(v) => setForm({ ...form, invoiceId: v === 'none' ? '' : v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select invoice" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {DELIVERY_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem value="none">No invoice link</SelectItem>
+                    {invoices.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.number} · {fmtMoney(i.total, currency)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="grid gap-1.5">
-              <Label>Drop Google Maps URL</Label>
-              <Input placeholder="https://www.google.com/maps?q=lat,lng" value={form.mapsUrl} onChange={(e) => setForm({ ...form, mapsUrl: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as DeliveryStatus })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DELIVERY_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Drop Google Maps URL</Label>
+                <Input value={form.mapsUrl} onChange={(e) => setForm({ ...form, mapsUrl: e.target.value })} placeholder="https://www.google.com/maps?q=lat,lng" />
+              </div>
             </div>
+            {form.mapsUrl.trim() && !isMapsUrl(form.mapsUrl.trim()) && (
+              <p className="text-xs text-destructive">Must be a maps.google.com, google.com/maps or maps.app.goo.gl link.</p>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -298,6 +385,62 @@ export default function DeliveriesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <RecordPreview
+        open={Boolean(preview)}
+        onOpenChange={(o) => !o && setPreview(null)}
+        title={preview ? `Delivery · ${preview.clientName}` : 'Delivery'}
+        page="deliveries"
+        sections={
+          preview
+            ? [
+                {
+                  id: 'info',
+                  title: `Delivery info · ${preview.status}`,
+                  content: (
+                    <div className="grid sm:grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-muted-foreground">Client: </span>{preview.clientName || '—'}</div>
+                      <div><span className="text-muted-foreground">Worker: </span>{preview.workerName || '—'}</div>
+                      <div><span className="text-muted-foreground">Task: </span>{preview.taskId ? preview.taskId.slice(-6) : '—'}</div>
+                      <div><span className="text-muted-foreground">Order: </span>{preview.orderId ? preview.orderId.slice(-6) : '—'}</div>
+                      <div><span className="text-muted-foreground">Invoice: </span>{preview.invoiceId ? preview.invoiceId.slice(-6) : '—'}</div>
+                      <div><span className="text-muted-foreground">Proof at: </span>{preview.proofAt ? new Date(preview.proofAt).toLocaleString('en-IN') : '—'}</div>
+                      {preview.mapsUrl && (
+                        <div className="sm:col-span-2">
+                          <a href={preview.mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                            Open map <ExternalLink size={14} />
+                          </a>
+                        </div>
+                      )}
+                      {preview.proofAt && (
+                        <div className="sm:col-span-2">
+                          <Button variant="outline" size="sm" onClick={() => { setPreview(null); openProof(preview); }}>
+                            <Camera size={16} className="mr-2" /> View photo proof
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ),
+                },
+              ]
+            : []
+        }
+        history={preview ? { entity: 'deliveries', id: preview.id } : undefined}
+        previous={
+          preview
+            ? {
+                rows: prevRows,
+                render: (rows) => (
+                  <ul className="text-sm space-y-1">
+                    {(rows as Delivery[]).map((d) => (
+                      <li key={d.id}>{d.status} · {d.workerName || '—'}</li>
+                    ))}
+                  </ul>
+                ),
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

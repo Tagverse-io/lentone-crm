@@ -11,23 +11,31 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   LEAD_STAGES,
+  collectionQuery,
   createItem,
+  fetchPage,
+  fmtMoney,
   getCollection,
+  logHistory,
+  nameKeyOf,
   removeItem,
-  subscribeLeads,
   updateItem,
   type Client,
+  type CustomValue,
   type Lead,
   type LeadStage,
 } from '@/lib/db';
-import { EmptyState, LoadingState } from '@/components/ui/states';
+import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
+import { DataTable } from '@/components/ui/data-table';
+import { CustomFieldsForm, customColumns } from '@/components/custom-fields';
+import { LoadingState } from '@/components/ui/states';
+import { useSWRConfig } from 'swr';
 
-const EMPTY = { contactName: '', phone: '', clientId: '', value: '', notes: '', stage: 'New' as LeadStage };
+const EMPTY = { contactName: '', email: '', phone: '', clientId: '', value: '', notes: '', stage: 'New' as LeadStage };
 
 const STAGE_COLORS: Record<LeadStage, string> = {
   New: 'bg-blue-500',
@@ -39,51 +47,73 @@ const STAGE_COLORS: Record<LeadStage, string> = {
   Lost: 'bg-red-500',
 };
 
-function money(n?: number): string {
-  if (!n) return '—';
-  return `₹${n.toLocaleString('en-IN')}`;
-}
-
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const { data: settings } = useAppSettings();
+  const currency = settings?.currency ?? '₹';
+  const customDefs = settings?.customFields?.leads ?? [];
+  const { mutate: mutateAll } = useSWRConfig();
+
+  const [board, setBoard] = useState<Lead[]>([]);
+  const [boardLoading, setBoardLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
   const [clientFilter, setClientFilter] = useState<string>('all');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Lead | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const [custom, setCustom] = useState<Record<string, CustomValue>>({});
   const [saving, setSaving] = useState(false);
+  const [listKey, setListKey] = useState(0);
+
+  const fetchBoard = async () => {
+    setBoardLoading(true);
+    try {
+      const page = await fetchPage<Lead>('leads', 'createdAt', 200);
+      setBoard(page.rows.filter((l) => !l.legacy));
+      const cs = await getCollection<Client>('clients');
+      setClients(cs);
+    } finally {
+      setBoardLoading(false);
+    }
+  };
 
   useEffect(() => {
-    getCollection<Client>('clients').then(setClients).catch(() => undefined);
-    const unsub = subscribeLeads(
-      (list) => {
-        setLeads(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
-    return unsub;
+    fetchBoard().catch(() => setBoardLoading(false));
+    const t = setInterval(() => fetchBoard().catch(() => undefined), POLL_FAST_MS);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') fetchBoard().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, []);
 
   const visible = useMemo(
-    () => (clientFilter === 'all' ? leads : leads.filter((l) => l.clientId === clientFilter)),
-    [leads, clientFilter],
+    () => (clientFilter === 'all' ? board : board.filter((l) => l.clientId === clientFilter)),
+    [board, clientFilter],
   );
 
-  if (loading) return <LoadingState label="Loading leads…" />;
+  const listQuery = useMemo(() => collectionQuery<Lead>('leads', 'createdAt', 'nameKey'), []);
 
-  const startCreate = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
+  const startCreate = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setCustom({});
+    setOpen(true);
+  };
   const startEdit = (l: Lead) => {
     setEditing(l);
     setForm({
       contactName: l.contactName,
+      email: l.email ?? '',
       phone: l.phone ?? '',
       clientId: l.clientId ?? '',
       value: l.value ? String(l.value) : '',
       notes: l.notes ?? '',
       stage: l.stage,
     });
+    setCustom(l.custom ?? {});
     setOpen(true);
   };
 
@@ -97,17 +127,27 @@ export default function LeadsPage() {
       const client = clients.find((c) => c.id === form.clientId);
       const data = {
         contactName: form.contactName.trim(),
-        phone: form.phone || undefined,
+        nameKey: nameKeyOf(form.contactName),
+        email: form.email.trim() || undefined,
+        phone: form.phone.trim() || undefined,
         clientId: form.clientId || undefined,
         clientName: client?.name,
         value: form.value ? Number(form.value) : undefined,
-        notes: form.notes || undefined,
+        notes: form.notes.trim() || undefined,
         stage: form.stage,
+        custom: Object.keys(custom).length > 0 ? custom : undefined,
       };
-      if (editing) await updateItem('leads', editing.id, data);
-      else await createItem('leads', data);
+      if (editing) {
+        await updateItem('leads', editing.id, data);
+        await logHistory('leads', editing.id, 'Lead updated');
+      } else {
+        const id = await createItem('leads', data);
+        await logHistory('leads', id, 'Lead created', `Stage ${data.stage}`);
+      }
       toast.success(editing ? 'Lead updated' : 'Lead added');
       setOpen(false);
+      setListKey((k) => k + 1);
+      fetchBoard().catch(() => undefined);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -115,11 +155,13 @@ export default function LeadsPage() {
     }
   };
 
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this lead?')) return;
+  const remove = async (l: Lead) => {
+    if (!window.confirm(`Delete lead ${l.contactName}?`)) return;
     try {
-      await removeItem('leads', id);
+      await removeItem('leads', l.id);
       toast.success('Lead deleted');
+      setListKey((k) => k + 1);
+      fetchBoard().catch(() => undefined);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
     }
@@ -129,15 +171,20 @@ export default function LeadsPage() {
     const { destination, draggableId } = result;
     if (!destination) return;
     const stage = destination.droppableId as LeadStage;
-    const lead = leads.find((l) => l.id === draggableId);
+    const lead = board.find((l) => l.id === draggableId);
     if (!lead || lead.stage === stage) return;
+    setBoard((prev) => prev.map((l) => (l.id === lead.id ? { ...l, stage } : l)));
     try {
       await updateItem('leads', lead.id, { stage });
-      toast.success(`Moved to ${stage}`);
+      await logHistory('leads', lead.id, `Stage → ${stage}`, `was ${lead.stage}`);
+      mutateAll((k) => typeof k === 'string' && k.startsWith('"leads"'));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Move failed');
+      fetchBoard().catch(() => undefined);
     }
   };
+
+  if (boardLoading) return <LoadingState label="Loading leads…" />;
 
   return (
     <div className="space-y-4">
@@ -146,25 +193,16 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Lead Management</h1>
           <p className="text-sm text-muted-foreground">Sales pipeline per client — drag cards between stages.</p>
         </div>
-        <Button onClick={startCreate}><Plus size={16} className="mr-2" />Add lead</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="icon" onClick={() => fetchBoard().catch(() => undefined)} title="Refresh" aria-label="Refresh">
+            <RefreshCw size={16} />
+          </Button>
+          <Button onClick={startCreate}>
+            <Plus size={16} className="mr-2" />
+            Add lead
+          </Button>
+        </div>
       </div>
-
-      <Card>
-        <CardContent className="pt-4">
-          <div className="grid gap-1.5 max-w-sm">
-            <Label>Filter pipeline by client</Label>
-            <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger><SelectValue placeholder="All clients" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All clients</SelectItem>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
 
       <Tabs defaultValue="board">
         <TabsList>
@@ -172,9 +210,34 @@ export default function LeadsPage() {
           <TabsTrigger value="list">Lead list</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="board" className="mt-4">
+        <TabsContent value="board" className="mt-4 space-y-4">
+          <Card>
+            <CardContent className="pt-4">
+              <div className="grid gap-1.5 max-w-sm">
+                <Label>Filter pipeline by client</Label>
+                <Select value={clientFilter} onValueChange={setClientFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All clients" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All clients</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
           {visible.length === 0 ? (
-            <EmptyState title="No leads" description="Add a lead to start the pipeline." />
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No leads yet — add one to start the pipeline.
+              </CardContent>
+            </Card>
           ) : (
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="grid grid-flow-col auto-cols-[240px] gap-3 overflow-x-auto pb-2">
@@ -202,10 +265,10 @@ export default function LeadsPage() {
                                   {...p.dragHandleProps}
                                   className={`rounded-lg border bg-card p-2.5 shadow-sm ${s.isDragging ? 'rotate-1 shadow-md' : ''}`}
                                 >
-                                  <p className="text-sm font-medium truncate">{l.contactName}</p>
+                                  <p className="text-sm font-medium truncate">{l.contactName || '(blank — edit to fix)'}</p>
                                   <p className="text-xs text-muted-foreground truncate">{l.clientName || '—'}</p>
                                   <div className="flex items-center justify-between mt-1.5">
-                                    <span className="text-xs font-semibold">{money(l.value)}</span>
+                                    <span className="text-xs font-semibold">{l.value ? fmtMoney(l.value, currency) : '—'}</span>
                                     <span className="text-[11px] text-muted-foreground">{l.phone || ''}</span>
                                   </div>
                                 </div>
@@ -224,52 +287,34 @@ export default function LeadsPage() {
         </TabsContent>
 
         <TabsContent value="list" className="mt-4">
-          <Card>
-            <CardHeader><CardTitle>All leads</CardTitle></CardHeader>
-            <CardContent>
-              {visible.length === 0 ? (
-                <EmptyState title="No leads" description="Add a lead to start the pipeline." />
-              ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
-                  <Table className="min-w-[720px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Contact</TableHead>
-                        <TableHead>Client</TableHead>
-                        <TableHead>Stage</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {visible.map((l) => (
-                        <TableRow key={l.id}>
-                          <TableCell>
-                            <div className="font-medium">{l.contactName}</div>
-                            <div className="text-xs text-muted-foreground">{l.phone || '—'}</div>
-                          </TableCell>
-                          <TableCell>{l.clientName || '—'}</TableCell>
-                          <TableCell><Badge variant="secondary">{l.stage}</Badge></TableCell>
-                          <TableCell className="text-right">{money(l.value)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => startEdit(l)} aria-label="Edit lead"><Pencil size={16} /></Button>
-                              <Button variant="ghost" size="icon" onClick={() => remove(l.id)} aria-label="Delete lead"><Trash2 size={16} /></Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div key={listKey}>
+            <DataTable<Lead>
+              title="All leads"
+              queryKey="leads"
+              fetchRows={listQuery}
+              searchPlaceholder="Search contact…"
+              filters={[{ field: 'stage', label: 'Stage', options: LEAD_STAGES.map((s) => ({ value: s, label: s })) }]}
+              defaultPageSize={settings?.defaultRowsPerPage ?? 25}
+              pollMs={POLL_FAST_MS}
+              onEdit={startEdit}
+              onDelete={remove}
+              emptyTitle="No leads"
+              emptyHint="Add a lead to start the pipeline."
+              columns={[
+                { key: 'contactName', header: 'Contact', render: (l) => l.contactName || '(blank — edit to fix)' },
+                { key: 'clientName', header: 'Client', render: (l) => l.clientName || '—' },
+                { key: 'phone', header: 'Phone', render: (l) => l.phone || '—' },
+                { key: 'stage', header: 'Stage', render: (l) => <Badge variant="secondary">{l.stage}</Badge> },
+                { key: 'value', header: 'Value', className: 'text-right', render: (l) => (l.value ? fmtMoney(l.value, currency) : '—') },
+                ...customColumns<Lead>(customDefs),
+              ]}
+            />
+          </div>
         </TabsContent>
       </Tabs>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit lead' : 'Add lead'}</DialogTitle>
           </DialogHeader>
@@ -280,23 +325,27 @@ export default function LeadsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label>Phone</Label>
-                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                <Label>Email</Label>
+                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               </div>
               <div className="grid gap-1.5">
-                <Label>Value (₹)</Label>
-                <Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
                 <Label>Client</Label>
                 <Select value={form.clientId || 'none'} onValueChange={(v) => setForm({ ...form, clientId: v === 'none' ? '' : v })}>
-                  <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select client" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No client</SelectItem>
                     {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -304,23 +353,36 @@ export default function LeadsPage() {
               <div className="grid gap-1.5">
                 <Label>Stage</Label>
                 <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v as LeadStage })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     {LEAD_STAGES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid gap-1.5">
+              <Label>Value (₹)</Label>
+              <Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
               <Label>Notes</Label>
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
+            <CustomFieldsForm defs={customDefs} values={custom} onChange={setCustom} />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

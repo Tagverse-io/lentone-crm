@@ -1,67 +1,78 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   CLIENT_CATEGORIES,
+  collectionQuery,
   createItem,
+  isMapsUrl,
+  nameKeyOf,
   removeItem,
-  subscribeClients,
   updateItem,
   type Client,
-  type ClientCategory,
+  type CustomValue,
 } from '@/lib/db';
-import { EmptyState, LoadingState } from '@/components/ui/states';
+import { useAppSettings } from '@/lib/realtime';
+import { DataTable } from '@/components/ui/data-table';
+import { CustomFieldsForm, customColumns } from '@/components/custom-fields';
 
-const EMPTY = { name: '', category: 'Hotel' as ClientCategory, phone: '', email: '', address: '', notes: '' };
+const EMPTY = {
+  name: '',
+  category: 'Hotel',
+  contactPerson: '',
+  phone: '',
+  email: '',
+  address: '',
+  gstin: '',
+  mapsUrl: '',
+  notes: '',
+};
 
 export default function ClientsPage() {
-  const [items, setItems] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<string>('all');
+  const { data: settings } = useAppSettings();
+  const categories = settings?.clientCategories?.length ? settings.clientCategories : [...CLIENT_CATEGORIES];
+  const customDefs = settings?.customFields?.clients ?? [];
+  const defaultPageSize = settings?.defaultRowsPerPage ?? 25;
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState(EMPTY);
+  const [custom, setCustom] = useState<Record<string, CustomValue>>({});
   const [saving, setSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    const unsub = subscribeClients(
-      (list) => {
-        setItems(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
-    return unsub;
-  }, []);
+  const fetchRows = useMemo(() => collectionQuery<Client>('clients', 'createdAt', 'nameKey'), []);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return items.filter((c) => {
-      if (category !== 'all' && c.category !== category) return false;
-      if (!q) return true;
-      return [c.name, c.phone, c.email, c.address].filter(Boolean).join(' ').toLowerCase().includes(q);
-    });
-  }, [items, search, category]);
-
-  if (loading) return <LoadingState label="Loading clients…" />;
-
-  const startCreate = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
+  const startCreate = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setCustom({});
+    setOpen(true);
+  };
   const startEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, category: c.category, phone: c.phone ?? '', email: c.email ?? '', address: c.address ?? '', notes: c.notes ?? '' });
+    setForm({
+      name: c.name,
+      category: c.category,
+      contactPerson: c.contactPerson ?? '',
+      phone: c.phone ?? '',
+      email: c.email ?? '',
+      address: c.address ?? '',
+      gstin: c.gstin ?? '',
+      mapsUrl: c.mapsUrl ?? '',
+      notes: c.notes ?? '',
+    });
+    setCustom(c.custom ?? {});
     setOpen(true);
   };
 
@@ -70,12 +81,30 @@ export default function ClientsPage() {
       toast.error('Client name is required');
       return;
     }
+    if (form.mapsUrl.trim() && !isMapsUrl(form.mapsUrl.trim())) {
+      toast.error('Google Maps link must be a maps.google.com, google.com/maps or maps.app.goo.gl URL');
+      return;
+    }
     setSaving(true);
     try {
-      if (editing) await updateItem('clients', editing.id, { ...form });
-      else await createItem('clients', { ...form });
+      const data = {
+        name: form.name.trim(),
+        nameKey: nameKeyOf(form.name),
+        category: form.category,
+        contactPerson: form.contactPerson.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim() || undefined,
+        address: form.address.trim() || undefined,
+        gstin: form.gstin.trim() || undefined,
+        mapsUrl: form.mapsUrl.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+        custom: Object.keys(custom).length > 0 ? custom : undefined,
+      };
+      if (editing) await updateItem('clients', editing.id, data);
+      else await createItem('clients', data);
       toast.success(editing ? 'Client updated' : 'Client added');
       setOpen(false);
+      setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -83,11 +112,12 @@ export default function ClientsPage() {
     }
   };
 
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this client?')) return;
+  const remove = async (c: Client) => {
+    if (!window.confirm(`Delete client ${c.name}?`)) return;
     try {
-      await removeItem('clients', id);
+      await removeItem('clients', c.id);
       toast.success('Client deleted');
+      setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
     }
@@ -95,101 +125,86 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Clients</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} of {items.length} clients</p>
-        </div>
-        <Button onClick={startCreate}><Plus size={16} className="mr-2" />Add client</Button>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Clients</h1>
+        <p className="text-sm text-muted-foreground">FMCG client directory — hotels, restaurants, bakeries and more.</p>
       </div>
 
-      <Card>
-        <CardContent className="pt-4 flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search name, phone, email, address…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Category" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {CLIENT_CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Client directory</CardTitle></CardHeader>
-        <CardContent>
-          {filtered.length === 0 ? (
-            <EmptyState title="No clients found" description="Add your first FMCG client to get started." />
-          ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <Table className="min-w-[720px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead className="hidden md:table-cell">Address</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell>
-                        <Link href={`/clients/${c.id}`} className="font-medium text-primary hover:underline">
-                          {c.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell><Badge variant="secondary">{c.category}</Badge></TableCell>
-                      <TableCell>{c.phone || '—'}</TableCell>
-                      <TableCell className="hidden md:table-cell max-w-48 truncate">{c.address || '—'}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => startEdit(c)} aria-label="Edit client"><Pencil size={16} /></Button>
-                          <Button variant="ghost" size="icon" onClick={() => remove(c.id)} aria-label="Delete client"><Trash2 size={16} /></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div key={refreshKey}>
+        <DataTable<Client>
+          title="Client directory"
+          queryKey="clients"
+          fetchRows={fetchRows}
+          searchPlaceholder="Search name…"
+          filters={[{ field: 'category', label: 'Category', options: categories.map((c) => ({ value: c, label: c })) }]}
+          defaultPageSize={defaultPageSize}
+          addLabel="Add client"
+          onAdd={startCreate}
+          onEdit={startEdit}
+          onDelete={remove}
+          emptyTitle="No clients found"
+          emptyHint="Add your first FMCG client to get started."
+          columns={[
+            {
+              key: 'name',
+              header: 'Name',
+              render: (c) => (
+                <Link href={`/clients/${c.id}`} className="font-medium text-primary hover:underline">
+                  {c.name || '(blank name — edit to fix)'}
+                </Link>
+              ),
+            },
+            { key: 'category', header: 'Category', render: (c) => <Badge variant="secondary">{c.category || '—'}</Badge> },
+            { key: 'contactPerson', header: 'Contact', render: (c) => c.contactPerson || '—' },
+            { key: 'phone', header: 'Phone', render: (c) => c.phone || '—' },
+            {
+              key: 'mapsUrl',
+              header: 'Map',
+              render: (c) =>
+                c.mapsUrl ? (
+                  <a href={c.mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline text-sm">
+                    Open map <ExternalLink size={14} />
+                  </a>
+                ) : (
+                  '—'
+                ),
+            },
+            ...customColumns<Client>(customDefs),
+          ]}
+        />
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit client' : 'Add client'}</DialogTitle>
-            <DialogDescription>Hotel, Restaurant, Mall, School, Office, PG, Bakery or Catering.</DialogDescription>
+            <DialogDescription>Contact, address, GSTIN and the Google Maps link used by Assign Work.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="grid gap-1.5">
               <Label>Name *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
-            <div className="grid gap-1.5">
-              <Label>Category</Label>
-              <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v as ClientCategory })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CLIENT_CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Category</Label>
+                <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Contact person</Label>
+                <Input value={form.contactPerson} onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
@@ -205,14 +220,36 @@ export default function ClientsPage() {
               <Label>Address</Label>
               <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>GSTIN</Label>
+                <Input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} placeholder="32ABCDE1234F1Z5" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Google Maps link</Label>
+                <Input
+                  value={form.mapsUrl}
+                  onChange={(e) => setForm({ ...form, mapsUrl: e.target.value })}
+                  placeholder="https://www.google.com/maps?q=lat,lng"
+                />
+              </div>
+            </div>
+            {form.mapsUrl.trim() && !isMapsUrl(form.mapsUrl.trim()) && (
+              <p className="text-xs text-destructive">Must be a maps.google.com, google.com/maps or maps.app.goo.gl link.</p>
+            )}
             <div className="grid gap-1.5">
               <Label>Notes</Label>
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
+            <CustomFieldsForm defs={customDefs} values={custom} onChange={setCustom} />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
