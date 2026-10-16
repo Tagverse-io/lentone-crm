@@ -1,15 +1,21 @@
-import { NextResponse } from "next/server";
+import { db } from "./admin";
 
-// Tiny in-memory rate limiter for low-volume test routes (per instance).
-// Not a security boundary — the owner/admin check is.
-const hits = new Map<string, number[]>();
-
-export function rateLimit(key: string, max: number, windowMs: number): void {
+// Shared RTDB-backed sliding-window rate limiter for low-volume routes.
+// State lives at /orgs/{orgId}/_rateLimits/{scope}_{uid} — client writes are
+// denied by database rules; the backend uses admin SDK which bypasses rules,
+// so the limit is shared across all server instances. Throws on exhaustion.
+export async function rateLimit(orgId: string, scope: string, uid: string, max: number, windowMs: number): Promise<void> {
   const now = Date.now();
-  const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-  if (arr.length >= max) {
-    throw NextResponse.json({ error: "Rate limit exceeded, try again later" }, { status: 429 });
+  const safeUid = uid.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const ref = db().ref(`/orgs/${orgId}/_rateLimits/${scope}_${safeUid}`);
+  const res = await ref.transaction((cur: number[] | null) => {
+    const hits = Array.isArray(cur) ? cur.filter((t) => typeof t === "number" && now - t < windowMs) : [];
+    if (hits.length >= max) return; // abort: exhausted
+    return [...hits, now].slice(-max);
+  });
+  if (!res.committed) {
+    const err = new Error("Rate limit exceeded, try again later") as Error & { status?: number };
+    err.status = 429;
+    throw err;
   }
-  arr.push(now);
-  hits.set(key, arr);
 }

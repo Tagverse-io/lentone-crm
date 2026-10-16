@@ -24,7 +24,11 @@ export const POST = handle(async (req: NextRequest) => {
   if (!parsed.success) return jsonError(req, "Invalid body: orgId required", 400);
   const { orgId } = parsed.data;
   await requireOwnerOrAdmin(orgId, user.uid);
-  rateLimit(`test:send-invoice:${orgId}:${user.uid}`, 5, 10 * 60 * 1000);
+  try {
+    await rateLimit(orgId, "send-invoice", user.uid, 5, 10 * 60 * 1000);
+  } catch {
+    return jsonError(req, "Rate limit exceeded, try again later", 429);
+  }
 
   const s = await getOrgSettings(orgId);
   const to = (s.notifications.test_email || "").trim();

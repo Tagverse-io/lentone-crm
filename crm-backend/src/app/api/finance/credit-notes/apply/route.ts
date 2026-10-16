@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { preflight, json, jsonError } from "@/lib/cors";
-import { handle, requireUser, requireOrgMember } from "@/lib/auth";
+import { handle, requireUser, requireOwnerOrAdmin } from "@/lib/auth";
 import { db } from "@/lib/admin";
 import { logAutomation } from "@/lib/log";
 
@@ -21,7 +21,7 @@ export const POST = handle(async (req: NextRequest) => {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return jsonError(req, "Invalid body: orgId, creditNoteId required", 400);
   const { orgId, creditNoteId } = parsed.data;
-  await requireOrgMember(orgId, user.uid);
+  await requireOwnerOrAdmin(orgId, user.uid);
   const database = db();
 
   const cnSnap = await database.ref(`/orgs/${orgId}/creditNotes/${creditNoteId}`).get();

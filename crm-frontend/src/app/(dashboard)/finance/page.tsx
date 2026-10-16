@@ -39,10 +39,13 @@ const BUILD_ORDER = [
 ];
 
 export default function FinancePage() {
-  const { workspace } = useAuth();
+  const { workspace, user } = useAuth();
   const { settings } = useWorkspace();
   const { hasPermission } = usePermissions();
   const fmt = useFmt();
+  // Credit notes are owner/admin only (issue + apply). Expenses/payments
+  // follow the payments edit/delete gates.
+  const isPrivileged = user?.role === 'admin' || (workspace as { owner_id?: string })?.owner_id === user?.id;
   const orgId = workspace?.id ?? null;
   const { items, loading, error, reload } = useCollection(expensesService, orgId);
   const { items: creditNotes, loading: cnLoading } = useCollection(creditNotesService, orgId);
@@ -418,7 +421,7 @@ export default function FinancePage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Credit notes</CardTitle>
-            {canEdit ? <Button size="sm" onClick={() => { setCnForm({ invoiceId: '', amount: '', reason: '' }); setCnOpen(true); }}><Plus size={14} className="mr-1" />New credit note</Button> : null}
+            {isPrivileged ? <Button size="sm" onClick={() => { setCnForm({ invoiceId: '', amount: '', reason: '' }); setCnOpen(true); }}><Plus size={14} className="mr-1" />New credit note</Button> : null}
           </div>
         </CardHeader>
         <CardContent>
@@ -436,7 +439,7 @@ export default function FinancePage() {
                           <TableCell className="text-right font-medium">{fmt.money(cn.total)}</TableCell>
                           <TableCell><Badge variant="secondary">{cn.status}</Badge></TableCell>
                           <TableCell className="text-right">
-                            {cn.status === 'issued' && canEdit ? (
+                            {cn.status === 'issued' && isPrivileged ? (
                               <Button size="sm" variant="outline" disabled={applyingId === cn.id} onClick={() => applyCreditNote(cn)}>
                                 {applyingId === cn.id ? 'Applying…' : 'Apply'}
                               </Button>
@@ -457,7 +460,7 @@ export default function FinancePage() {
                       <p className="mt-1 text-sm text-muted-foreground">{cn.invoiceNumber ?? cn.invoiceId}</p>
                       <div className="mt-2 flex items-center justify-between">
                         <p className="font-semibold">{fmt.money(cn.total)}</p>
-                        {cn.status === 'issued' && canEdit ? (
+                        {cn.status === 'issued' && isPrivileged ? (
                           <Button size="sm" variant="outline" disabled={applyingId === cn.id} onClick={() => applyCreditNote(cn)}>
                             {applyingId === cn.id ? 'Applying…' : 'Apply'}
                           </Button>
