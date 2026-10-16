@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 interface SidebarContextType {
   mobileOpen: boolean;
@@ -18,18 +18,25 @@ const SidebarContext = createContext<SidebarContextType>({
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsedState] = useState(() => {
-    if (typeof window !== 'undefined') {
+  // Default must be identical on server and client first render (hydration).
+  // The stored preference is applied after mount instead.
+  const [collapsed, setCollapsedState] = useState(false);
+
+  useEffect(() => {
+    try {
       const saved = localStorage.getItem('sidebar_collapsed');
-      if (saved !== null) return saved === 'true';
+      if (saved !== null) setCollapsedState(saved === 'true');
+    } catch {
+      // storage unavailable — keep default
     }
-    return false;
-  });
+  }, []);
 
   const setCollapsed = (val: boolean) => {
     setCollapsedState(val);
-    if (typeof window !== 'undefined') {
+    try {
       localStorage.setItem('sidebar_collapsed', String(val));
+    } catch {
+      // storage unavailable — keep in-memory state only
     }
   };
 
