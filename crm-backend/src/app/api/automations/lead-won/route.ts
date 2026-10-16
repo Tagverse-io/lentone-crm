@@ -56,6 +56,14 @@ export const POST = handle(async (req: NextRequest) => {
       id: ref.key, workspace_id: orgId, client_id: clientId, title: `Project for ${lead.name ?? leadId}`,
       description: `Created automatically from won lead (${lead.company ?? ""})`.trim(),
       status: "pending", leadId,
+      // Rich Project snapshots so the UI model renders without extra fetches.
+      // Lead value goes to budget.est; estimated_cost stays empty.
+      manual_client_name: lead.name ?? "",
+      manual_client_email: lead.email ?? "",
+      manual_client_company: lead.company ?? "",
+      manual_client_phone: lead.phone ?? "",
+      budget: { est: lead.estimated_value ?? 0, actual: 0 },
+      progress_percentage: 0,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
     projectId = ref.key;

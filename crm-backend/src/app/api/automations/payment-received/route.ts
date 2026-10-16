@@ -42,14 +42,34 @@ export const POST = handle(async (req: NextRequest) => {
   if (!inv) return jsonError(req, "Invoice not found", 404);
 
   const allSnap = await database.ref(`/orgs/${orgId}/payments`).get();
-  const all = Object.values((allSnap.val() ?? {}) as Record<string, { invoice_id?: string; amount?: number }>);
-  const paid = all.filter((p) => p.invoice_id === payment.invoice_id).reduce((s, p) => s + (p.amount ?? 0), 0);
+  const all = Object.values((allSnap.val() ?? {}) as Record<string, {
+    invoice_id?: string; amount?: number; status?: string; creditNoteId?: string; credit_note_id?: string;
+  }>);
+  const cnSnap = await database.ref(`/orgs/${orgId}/creditNotes`).get();
+  const cnEntries = Object.entries((cnSnap.val() ?? {}) as Record<string, { invoiceId?: string; status?: string; appliedTotal?: number; total?: number; id?: string }>);
+  const appliedForInvoice = cnEntries
+    .filter(([, c]) => c.invoiceId === payment.invoice_id && c.status === "applied")
+    .map(([key, c]) => ({ ...c, id: c.id ?? key }));
+  const appliedIds = new Set(appliedForInvoice.map((c) => String(c.id ?? "")));
+  const credited = appliedForInvoice.reduce((s, c) => s + (c.appliedTotal ?? c.total ?? 0), 0);
+  // Only completed payments count toward amount_paid. Refunded (and other
+  // non-completed) payments never count as collections. A payment linked to a
+  // credit note is the refund leg of an applied note — the note already
+  // reduced the invoice, so it must not reduce it twice.
+  const paid = all
+    .filter((p) => p.invoice_id === payment.invoice_id)
+    .filter((p) => (p.status ?? "completed") === "completed")
+    .filter((p) => {
+      const link = p.creditNoteId ?? p.credit_note_id;
+      return !link || !appliedIds.has(String(link));
+    })
+    .reduce((s, p) => s + (p.amount ?? 0), 0);
   const total = inv.amount ?? 0;
-  const due = Math.max(0, total - paid);
-  const status = due <= 0 ? "paid" : paid > 0 ? "partially_paid" : "pending";
+  const due = Math.max(0, Math.round((total - paid - credited) * 100) / 100);
+  const status = due <= 0 ? (paid > 0 ? "paid" : credited > 0 ? "credited" : "paid") : paid > 0 || credited > 0 ? "partially_paid" : "pending";
   await invRef.update({ amount_paid: paid, amount_due: due, status, updated_at: new Date().toISOString() });
 
-  await logAutomation(orgId, { name: "payment-received", status: "ok", detail: `invoice ${payment.invoice_id} → ${status}, paid ${paid}/${total}` });
+  await logAutomation(orgId, { name: "payment-received", status: "ok", detail: `invoice ${payment.invoice_id} → ${status}, paid ${paid}/${total}, credited ${credited}` });
 
   try {
     const money = await formatMoneyForOrg(orgId, payment.amount ?? 0);
