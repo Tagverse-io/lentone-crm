@@ -80,25 +80,47 @@ export default function ClientsPage() {
         <CardHeader><CardTitle>All clients</CardTitle></CardHeader>
         <CardContent>
           {items.length === 0 ? <EmptyState title="No clients yet" hint="Won leads create clients automatically." /> : (
-            <Table>
-              <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Company</TableHead><TableHead>Phone</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>
+            <>
+              <div className="overflow-x-auto hidden md:block">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Company</TableHead><TableHead>Phone</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {items.map((c) => (
+                      <TableRow key={c.id}>
+                        <TableCell className="font-medium">{c.name}</TableCell>
+                        <TableCell>{c.email}</TableCell>
+                        <TableCell>{c.company ?? '—'}</TableCell>
+                        <TableCell>{c.phone ?? '—'}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => startEdit(c)} aria-label="Edit"><Pencil size={14} /></Button>
+                            <Button size="icon" variant="ghost" onClick={() => remove(c.id)} aria-label="Delete"><Trash2 size={14} /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="grid gap-3 md:hidden">
                 {items.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>{c.email}</TableCell>
-                    <TableCell>{c.company ?? '—'}</TableCell>
-                    <TableCell>{c.phone ?? '—'}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+                  <div key={c.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{c.name}</p>
+                        {c.company ? <p className="text-sm text-muted-foreground truncate">{c.company}</p> : null}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
                         <Button size="icon" variant="ghost" onClick={() => startEdit(c)} aria-label="Edit"><Pencil size={14} /></Button>
                         <Button size="icon" variant="ghost" onClick={() => remove(c.id)} aria-label="Delete"><Trash2 size={14} /></Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                    <p className="mt-2 text-sm truncate">{c.email}</p>
+                    {c.phone ? <p className="text-sm text-muted-foreground">{c.phone}</p> : null}
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

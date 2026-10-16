@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -80,6 +81,15 @@ export default function VideoPage() {
     }
   };
 
+  const changeStage = async (id: string, stage: VideoStage) => {
+    if (!orgId) return;
+    try {
+      await videosService.update(orgId, id, { stage });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Move failed');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -90,8 +100,29 @@ export default function VideoPage() {
         <Button onClick={() => setOpen(true)}><Plus size={16} className="mr-2" />New video</Button>
       </div>
       {items.length === 0 ? <EmptyState title="No videos yet" hint="Add your first production." /> : null}
+      <div className="grid gap-3 md:hidden">
+        {items.map((v) => (
+          <div key={v.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold">{v.title}</p>
+              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium capitalize">{v.stage}</span>
+            </div>
+            {v.dueDate ? <p className="mt-1 text-sm text-muted-foreground">due {v.dueDate}</p> : null}
+            {v.notes ? <p className="mt-1 text-sm text-muted-foreground">{v.notes}</p> : null}
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <Select value={v.stage} onValueChange={(s) => changeStage(v.id, s as VideoStage)}>
+                <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {STAGES.map((s) => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <button className="text-xs text-destructive hover:underline" onClick={() => remove(v.id)}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="hidden md:grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
           {STAGES.map((stage) => (
             <Droppable droppableId={stage} key={stage}>
               {(provided, snapshot) => (

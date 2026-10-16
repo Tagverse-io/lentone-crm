@@ -115,25 +115,47 @@ export default function SocialPage() {
         <CardHeader><CardTitle>Posts</CardTitle></CardHeader>
         <CardContent>
           {items.length === 0 ? <EmptyState title="No posts yet" hint="Schedule a post to see it on the calendars." /> : (
-            <Table>
-              <TableHeader><TableRow><TableHead>Content</TableHead><TableHead>Platform</TableHead><TableHead>Scheduled</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>
+            <>
+              <div className="overflow-x-auto hidden md:block">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Content</TableHead><TableHead>Platform</TableHead><TableHead>Scheduled</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {items.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="max-w-xs truncate">{p.content}</TableCell>
+                        <TableCell>{p.platform}</TableCell>
+                        <TableCell>{p.scheduledAt ? fmt.date(p.scheduledAt) : '—'}</TableCell>
+                        <TableCell><Badge variant="secondary">{p.status}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {p.status !== 'published' ? <Button size="sm" variant="outline" onClick={() => setStatus(p.id, 'published')}>Publish</Button> : null}
+                            <Button size="icon" variant="ghost" onClick={() => remove(p.id)} aria-label="Delete"><Trash2 size={14} /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="grid gap-3 md:hidden">
                 {items.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="max-w-xs truncate">{p.content}</TableCell>
-                    <TableCell>{p.platform}</TableCell>
-                    <TableCell>{p.scheduledAt ? fmt.date(p.scheduledAt) : '—'}</TableCell>
-                    <TableCell><Badge variant="secondary">{p.status}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+                  <div key={p.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <Badge variant="secondary">{p.platform}</Badge>
+                      <Badge variant="secondary">{p.status}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm">{p.content}</p>
+                    <div className="mt-3 flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">{p.scheduledAt ? fmt.date(p.scheduledAt) : 'Unscheduled'}</p>
+                      <div className="flex gap-1">
                         {p.status !== 'published' ? <Button size="sm" variant="outline" onClick={() => setStatus(p.id, 'published')}>Publish</Button> : null}
                         <Button size="icon" variant="ghost" onClick={() => remove(p.id)} aria-label="Delete"><Trash2 size={14} /></Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -83,31 +83,60 @@ export default function FollowUpsPage() {
         <CardHeader><CardTitle>Scheduled</CardTitle></CardHeader>
         <CardContent>
           {items.length === 0 ? <EmptyState title="No follow-ups" hint="Schedule a follow-up for a lead or client." /> : (
-            <Table>
-              <TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Due</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>
+            <>
+              <div className="overflow-x-auto hidden md:block">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Due</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {items.map((f) => {
+                      const overdue = !f.done && new Date(f.dueAt) < new Date();
+                      return (
+                        <TableRow key={f.id}>
+                          <TableCell><p className="font-medium">{f.title}</p><p className="text-xs text-muted-foreground">{f.notes ?? ''}</p></TableCell>
+                          <TableCell>{fmt.date(f.dueAt)}</TableCell>
+                          <TableCell>
+                            <Badge variant={f.done ? 'default' : overdue ? 'destructive' : 'secondary'}>
+                              {f.done ? 'Done' : overdue ? 'Overdue' : 'Pending'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button size="icon" variant="ghost" onClick={() => toggle(f.id, f.done)} aria-label="Toggle done"><CheckCircle2 size={14} /></Button>
+                              <Button size="icon" variant="ghost" onClick={() => remove(f.id)} aria-label="Delete"><Trash2 size={14} /></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="grid gap-3 md:hidden">
                 {items.map((f) => {
                   const overdue = !f.done && new Date(f.dueAt) < new Date();
                   return (
-                    <TableRow key={f.id}>
-                      <TableCell><p className="font-medium">{f.title}</p><p className="text-xs text-muted-foreground">{f.notes ?? ''}</p></TableCell>
-                      <TableCell>{fmt.date(f.dueAt)}</TableCell>
-                      <TableCell>
+                    <div key={f.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold">{f.title}</p>
+                          {f.notes ? <p className="mt-1 text-sm text-muted-foreground">{f.notes}</p> : null}
+                        </div>
                         <Badge variant={f.done ? 'default' : overdue ? 'destructive' : 'secondary'}>
                           {f.done ? 'Done' : overdue ? 'Overdue' : 'Pending'}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">{fmt.date(f.dueAt)}</p>
+                        <div className="flex gap-1">
                           <Button size="icon" variant="ghost" onClick={() => toggle(f.id, f.done)} aria-label="Toggle done"><CheckCircle2 size={14} /></Button>
                           <Button size="icon" variant="ghost" onClick={() => remove(f.id)} aria-label="Delete"><Trash2 size={14} /></Button>
                         </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                    </div>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

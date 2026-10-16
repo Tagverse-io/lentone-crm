@@ -65,22 +65,42 @@ export default function ContentCalendarPage() {
       <Card>
         <CardHeader><CardTitle>{title} — {items.filter((p) => p.scheduledAt).length} scheduled</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="py-1">{d}</div>)}
+          <div className="hidden md:block">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((d) => {
+                const inMonth = d.getMonth() === month;
+                const posts = byDay.get(d.toDateString()) ?? [];
+                return (
+                  <div key={d.toISOString()} className={`min-h-20 rounded border p-1 text-xs ${inMonth ? '' : 'opacity-40'}`}>
+                    <p className="font-medium">{d.getDate()}</p>
+                    {posts.map((p) => (
+                      <Badge key={p.id} variant="secondary" className="mb-1 block truncate">{p.platform}</Badge>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className="grid grid-cols-7 gap-1">
-            {days.map((d) => {
-              const inMonth = d.getMonth() === month;
-              const posts = byDay.get(d.toDateString()) ?? [];
-              return (
-                <div key={d.toISOString()} className={`min-h-20 rounded border p-1 text-xs ${inMonth ? '' : 'opacity-40'}`}>
-                  <p className="font-medium">{d.getDate()}</p>
-                  {posts.map((p) => (
-                    <Badge key={p.id} variant="secondary" className="mb-1 block truncate">{p.platform}</Badge>
-                  ))}
+          <div className="grid gap-3 md:hidden">
+            {[...byDay.entries()]
+              .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
+              .map(([day, posts]) => (
+                <div key={day} className="rounded-lg border bg-card p-4 shadow-sm">
+                  <p className="font-semibold">{new Date(day).toDateString()}</p>
+                  <div className="mt-2 space-y-2">
+                    {posts.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                        <p className="min-w-0 truncate">{p.content}</p>
+                        <Badge variant="secondary">{p.platform}</Badge>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              );
-            })}
+              ))}
+            {byDay.size === 0 ? <p className="text-sm text-muted-foreground">No scheduled posts this month.</p> : null}
           </div>
         </CardContent>
       </Card>
