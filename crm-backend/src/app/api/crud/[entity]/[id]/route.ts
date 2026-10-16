@@ -11,7 +11,7 @@ export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));
 }
 
-async function check(req: NextRequest, orgId: string, entity: EntityName, id: string): Promise<{ uid: string } | NextResponse> {
+async function check(req: NextRequest, orgId: string, entity: EntityName, id: string): Promise<{ uid: string; role: string } | NextResponse> {
   const header = req.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) return jsonError(req, "Missing Authorization Bearer token", 401);
   let user;
@@ -26,7 +26,11 @@ async function check(req: NextRequest, orgId: string, entity: EntityName, id: st
   if (entity === "users" && id !== user.uid && role !== "admin") {
     return jsonError(req, "Forbidden", 403);
   }
-  return { uid: user.uid };
+  return { uid: user.uid, role };
+}
+
+function isPrivileged(role: string): boolean {
+  return role === "admin" || role === "owner";
 }
 
 async function parsedEntity(ctx: { params: Promise<{ entity: string; id: string }> }): Promise<{ entity: EntityName; id: string } | null> {
@@ -57,6 +61,10 @@ export const PUT = handle(async (req: NextRequest, ctx: { params: Promise<{ enti
   if (!body.success) return jsonError(req, "Invalid body: orgId + data required", 400);
   const authed = await check(req, body.data.orgId, parsed.entity, parsed.id);
   if (authed instanceof NextResponse) return authed;
+  // Credit notes are owner/admin only (edit).
+  if (parsed.entity === "creditNotes" && !isPrivileged(authed.role)) {
+    return jsonError(req, "Owner or admin only", 403);
+  }
   const item = await crudUpdate(body.data.orgId, parsed.entity, parsed.id, body.data.data);
   if (!item) return jsonError(req, "Not found", 404);
   return json(req, { item });
@@ -70,6 +78,10 @@ export const DELETE = handle(async (req: NextRequest, ctx: { params: Promise<{ e
   if (!orgId) return jsonError(req, "orgId query required", 400);
   const authed = await check(req, orgId, parsed.entity, parsed.id);
   if (authed instanceof NextResponse) return authed;
+  // Deletes are owner/admin only, for every entity.
+  if (!isPrivileged(authed.role)) {
+    return jsonError(req, "Owner or admin only", 403);
+  }
   const deleted = await crudDelete(orgId, parsed.entity, parsed.id);
   if (!deleted) return jsonError(req, "Not found", 404);
   return json(req, { ok: true });

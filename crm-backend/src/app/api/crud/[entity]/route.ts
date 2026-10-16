@@ -11,7 +11,7 @@ export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));
 }
 
-async function check(req: NextRequest, orgId: string, entity: EntityName, id?: string): Promise<{ uid: string } | NextResponse> {
+async function check(req: NextRequest, orgId: string, entity: EntityName, id?: string): Promise<{ uid: string; role: string } | NextResponse> {
   const header = req.headers.get("authorization") ?? "";
   if (!header.startsWith("Bearer ")) return jsonError(req, "Missing Authorization Bearer token", 401);
   let user;
@@ -27,7 +27,11 @@ async function check(req: NextRequest, orgId: string, entity: EntityName, id?: s
   if (entity === "users" && id && id !== user.uid && role !== "admin") {
     return jsonError(req, "Forbidden", 403);
   }
-  return { uid: user.uid };
+  return { uid: user.uid, role };
+}
+
+function isPrivileged(role: string): boolean {
+  return role === "admin" || role === "owner";
 }
 
 // GET /api/crud/{entity}?orgId=... — list all records.
@@ -49,6 +53,10 @@ export const POST = handle(async (req: NextRequest, ctx: { params: Promise<{ ent
   if (!parsed.success) return jsonError(req, "Invalid body: orgId + data required", 400);
   const authed = await check(req, parsed.data.orgId, entity.data);
   if (authed instanceof NextResponse) return authed;
+  // Credit notes are owner/admin only (issue).
+  if (entity.data === "creditNotes" && !isPrivileged(authed.role)) {
+    return jsonError(req, "Owner or admin only", 403);
+  }
   try {
     return json(req, { item: await crudCreate(parsed.data.orgId, entity.data, parsed.data.data) }, 201);
   } catch (e) {

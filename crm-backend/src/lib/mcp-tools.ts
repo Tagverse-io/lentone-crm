@@ -30,6 +30,10 @@ async function requireMember(orgId: string, auth: McpAuth): Promise<string> {
   return role;
 }
 
+function requirePrivileged(role: string): void {
+  if (role !== "admin" && role !== "owner") throw new Error("Owner or admin only");
+}
+
 export interface ToolResult {
   ok: boolean;
   data?: unknown;
@@ -299,7 +303,8 @@ async function toolCrudGet(args: unknown, auth: McpAuth): Promise<ToolResult> {
 
 async function toolCrudCreate(args: unknown, auth: McpAuth): Promise<ToolResult> {
   const { entity, orgId, data } = CrudBase.extend({ data: z.record(z.string(), z.unknown()) }).parse(args);
-  await requireMember(orgId, auth);
+  const role = await requireMember(orgId, auth);
+  if (entity === "creditNotes") requirePrivileged(role);
   try {
     return { ok: true, data: { item: await crudCreate(orgId, entity as EntityName, data) } };
   } catch (e) {
@@ -309,7 +314,8 @@ async function toolCrudCreate(args: unknown, auth: McpAuth): Promise<ToolResult>
 
 async function toolCrudUpdate(args: unknown, auth: McpAuth): Promise<ToolResult> {
   const { entity, orgId, id, data } = CrudBase.extend({ id: z.string().min(1), data: z.record(z.string(), z.unknown()) }).parse(args);
-  await requireMember(orgId, auth);
+  const role = await requireMember(orgId, auth);
+  if (entity === "creditNotes") requirePrivileged(role);
   const item = await crudUpdate(orgId, entity as EntityName, id, data);
   if (!item) return { ok: false, error: "Not found" };
   return { ok: true, data: { item } };
@@ -317,7 +323,7 @@ async function toolCrudUpdate(args: unknown, auth: McpAuth): Promise<ToolResult>
 
 async function toolCrudDelete(args: unknown, auth: McpAuth): Promise<ToolResult> {
   const { entity, orgId, id } = CrudBase.extend({ id: z.string().min(1) }).parse(args);
-  await requireMember(orgId, auth);
+  requirePrivileged(await requireMember(orgId, auth));
   const deleted = await crudDelete(orgId, entity as EntityName, id);
   if (!deleted) return { ok: false, error: "Not found" };
   return { ok: true, data: { deleted: true } };
