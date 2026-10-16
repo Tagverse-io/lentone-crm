@@ -1,13 +1,11 @@
 node_modules/
 .next/
 crm-frontend/node_modules/
-crm-backend/node_modules/
 crm-frontend/.next/
-crm-backend/.next/
 crm-frontend/.env.local
-crm-backend/.env.local
 crm-frontend/.env*.local
-crm-backend/.env*.local
+.env.local
+.env*.local
 .DS_Store
 *.log
 .vercel

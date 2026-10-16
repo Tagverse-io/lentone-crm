@@ -1,61 +1,11 @@
 {
   "rules": {
-    ".read": false,
-    ".write": false,
-    "orgs": {
-      "$orgId": {
-        ".read": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists()",
-        ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && (root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin' || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'owner') && !newData.exists()",
-        "users": {
-          "$uid": {
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $uid && (!data.exists() ? newData.child('role').val() === 'member' : (newData.child('role').val() === data.child('role').val() || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin'))"
-          }
-        },
-        "settings": {
-          ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && (root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin' || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'owner')"
-        },
-        "counters": {
-          ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && newData.exists()"
-        },
-        "creditNotes": {
-          ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && (root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin' || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'owner')"
-        },
-        "_rateLimits": {
-          ".read": false,
-          ".write": false
-        },
-        "invites": { ".read": "auth != null", ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && (root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin' || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'owner' || newData.exists())", ".indexOn": ["email", "status"] },
-        "leads": { ".indexOn": ["stage", "assignedTo", "updatedAt", "nextFollowUp"] },
-        "clients": { ".indexOn": ["leadId", "email", "updatedAt"] },
-        "contacts": { ".indexOn": ["clientId", "email"] },
-        "followUps": { ".indexOn": ["done", "dueAt", "assignedTo", "leadId", "invoiceId"] },
-        "quotations": { ".indexOn": ["status", "clientId", "updatedAt"] },
-        "invoices": { ".indexOn": ["status", "clientId", "dueDate", "quotationId"] },
-        "payments": { ".indexOn": ["invoiceId", "date"] },
-        "projects": { ".indexOn": ["status", "clientId", "leadId", "deadline"] },
-        "tasks": { ".indexOn": ["status", "assignedTo", "dueDate", "projectId"] },
-        "socialAccounts": { ".indexOn": ["platform"] },
-        "posts": { ".indexOn": ["status", "platform", "scheduledAt"] },
-        "videoProductions": { ".indexOn": ["stage", "dueDate"] },
-        "events": { ".indexOn": ["start", "googleId"] },
-        "notifications": { ".indexOn": ["user_id", "created_at", "read"] },
-        "automationsLog": { ".indexOn": ["name", "createdAt"] },
-        "$other": {
-          ".write": "auth != null && root.child('orgs').child($orgId).child('users').child(auth.uid).exists() && (root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'admin' || root.child('orgs').child($orgId).child('users').child(auth.uid).child('role').val() === 'owner' || newData.exists())"
-        }
-      }
-    },
-    "private": {
-      "$uid": {
-        ".read": false,
-        ".write": false
-      }
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
+    ".read": "auth != null",
+    ".write": "auth != null",
+    "deliveryProofs": {
+      "$deliveryId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     }
   }
