@@ -1,0 +1,169 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { timingSafeEqual } from "crypto";
+import { getAdminDatabase } from "@/lib/firebase-admin";
+import { getServerEnv } from "@/lib/env";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MAPS_URL_RE = /^https:\/\/www\.google\.com\/maps\?q=-?\d+(\.\d+)?,-?\d+(\.\d+)?$/;
+
+/** Max decoded proof-photo size: 500 KB. Anything bigger is rejected. */
+const MAX_PROOF_BYTES = 500 * 1024;
+
+const EventSchema = z.object({
+  workerId: z.string().min(1, "workerId is missing"),
+  workerName: z.string().optional(),
+  phone: z.string().optional(),
+  event: z.enum(["login", "logout", "location", "task_update", "delivery_update"]),
+  mapsUrl: z.string().optional(),
+  timestamp: z.string().min(1, "timestamp is missing"),
+  taskId: z.string().optional(),
+  status: z.string().optional(),
+  deliveryId: z.string().optional(),
+  proofBase64: z.string().optional(),
+});
+
+const TASK_STATUSES = ["Assigned", "In Progress", "Done"];
+const DELIVERY_STATUSES = ["Pending", "Out for Delivery", "Delivered"];
+
+function unauthorized(req: NextRequest): boolean {
+  let expected = "";
+  try {
+    expected = getServerEnv().APP_API_KEY;
+  } catch {
+    return true;
+  }
+  const header = req.headers.get("authorization") ?? "";
+  const m = header.match(/^Bearer\s+(.+)$/);
+  if (!m) return true;
+  const a = Buffer.from(m[1]);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return true;
+  return !timingSafeEqual(a, b);
+}
+
+function stripDataPrefix(b64: string): string {
+  const i = b64.indexOf("base64,");
+  return i >= 0 ? b64.slice(i + "base64,".length) : b64;
+}
+
+export async function POST(req: NextRequest) {
+  if (unauthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = EventSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") },
+      { status: 400 },
+    );
+  }
+  const e = parsed.data;
+  const ts = new Date(e.timestamp);
+  if (Number.isNaN(ts.getTime())) {
+    return NextResponse.json({ error: "timestamp: not a valid date" }, { status: 400 });
+  }
+
+  const db = getAdminDatabase();
+
+  try {
+    switch (e.event) {
+      case "login":
+      case "logout": {
+        const date = e.timestamp.slice(0, 10); // YYYY-MM-DD
+        const attRef = db.ref(`attendance/${e.workerId}/${date}`);
+        // Upsert worker directory entry.
+        await db.ref(`workers/${e.workerId}`).update({
+          ...(e.workerName ? { name: e.workerName } : {}),
+          ...(e.phone ? { phone: e.phone } : {}),
+          active: true,
+          updatedAt: new Date().toISOString(),
+        });
+        if (e.event === "login") {
+          await attRef.update({ date, loginAt: e.timestamp });
+        } else {
+          const snap = await attRef.get();
+          const prev = (snap.val() ?? {}) as { loginAt?: string };
+          const patch: Record<string, unknown> = { date, logoutAt: e.timestamp };
+          if (prev.loginAt) {
+            const ms = ts.getTime() - new Date(prev.loginAt).getTime();
+            if (ms >= 0) patch.hoursWorked = Math.round((ms / 3_600_000) * 100) / 100;
+          }
+          await attRef.update(patch);
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      case "location": {
+        if (!e.mapsUrl || !MAPS_URL_RE.test(e.mapsUrl)) {
+          return NextResponse.json({ error: "mapsUrl: must be a Google Maps URL (https://www.google.com/maps?q=lat,lng)" }, { status: 400 });
+        }
+        const latest = { mapsUrl: e.mapsUrl, timestamp: e.timestamp, ...(e.workerName ? { workerName: e.workerName } : {}) };
+        await db.ref(`locations/${e.workerId}/latest`).set(latest);
+        await db.ref(`locations/${e.workerId}/history`).push({ mapsUrl: e.mapsUrl, timestamp: e.timestamp });
+        return NextResponse.json({ ok: true });
+      }
+
+      case "task_update": {
+        if (!e.taskId) return NextResponse.json({ error: "taskId is missing" }, { status: 400 });
+        if (!e.status || !TASK_STATUSES.includes(e.status)) {
+          return NextResponse.json({ error: `status: must be one of ${TASK_STATUSES.join(", ")}` }, { status: 400 });
+        }
+        const taskSnap = await db.ref(`tasks/${e.taskId}`).get();
+        if (!taskSnap.exists()) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+        const task = taskSnap.val() as { workerId?: string };
+        if (task.workerId && task.workerId !== e.workerId) {
+          return NextResponse.json({ error: "Task is not assigned to this worker" }, { status: 403 });
+        }
+        await db.ref(`tasks/${e.taskId}`).update({ status: e.status, updatedAt: new Date().toISOString() });
+        return NextResponse.json({ ok: true });
+      }
+
+      case "delivery_update": {
+        if (!e.deliveryId) return NextResponse.json({ error: "deliveryId is missing" }, { status: 400 });
+        if (!e.status || !DELIVERY_STATUSES.includes(e.status)) {
+          return NextResponse.json({ error: `status: must be one of ${DELIVERY_STATUSES.join(", ")}` }, { status: 400 });
+        }
+        const delSnap = await db.ref(`deliveries/${e.deliveryId}`).get();
+        if (!delSnap.exists()) return NextResponse.json({ error: "Delivery not found" }, { status: 404 });
+        const patch: Record<string, unknown> = { status: e.status, updatedAt: new Date().toISOString() };
+        if (e.mapsUrl) {
+          if (!MAPS_URL_RE.test(e.mapsUrl)) {
+            return NextResponse.json({ error: "mapsUrl: must be a Google Maps URL (https://www.google.com/maps?q=lat,lng)" }, { status: 400 });
+          }
+          patch.mapsUrl = e.mapsUrl;
+        }
+        if (e.proofBase64) {
+          const raw = stripDataPrefix(e.proofBase64);
+          let bytes = 0;
+          try {
+            bytes = Buffer.from(raw, "base64").length;
+          } catch {
+            return NextResponse.json({ error: "proofBase64: not valid base64" }, { status: 400 });
+          }
+          if (bytes > MAX_PROOF_BYTES) {
+            return NextResponse.json({ error: "proofBase64: photo exceeds 500 KB after app-side compression" }, { status: 413 });
+          }
+          // Stored ONLY at /deliveryProofs/{deliveryId} — never under a listed path.
+          await db.ref(`deliveryProofs/${e.deliveryId}`).set({ proofBase64: raw, updatedAt: new Date().toISOString() });
+          patch.proofAt = e.timestamp;
+        }
+        await db.ref(`deliveries/${e.deliveryId}`).update(patch);
+        return NextResponse.json({ ok: true });
+      }
+    }
+  } catch (err) {
+    console.error("POST /api/app/events failed:", err);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}
