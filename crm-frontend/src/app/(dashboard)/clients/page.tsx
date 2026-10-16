@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,46 +9,71 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '@/lib/firebase/auth-context';
-import { useCollection } from '@/lib/use-collection';
-import { clientsService } from '@/lib/backend-crud';
-import type { Client } from '@/lib/types';
-import { nowIso } from '@/lib/utils';
-import { EmptyState, LoadingState, ErrorState } from '@/components/ui/states';
+import {
+  CLIENT_CATEGORIES,
+  createItem,
+  removeItem,
+  subscribeClients,
+  updateItem,
+  type Client,
+  type ClientCategory,
+} from '@/lib/db';
+import { EmptyState, LoadingState } from '@/components/ui/states';
 
-const EMPTY = { name: '', email: '', phone: '', company: '', address: '', source: '' };
+const EMPTY = { name: '', category: 'Hotel' as ClientCategory, phone: '', email: '', address: '', notes: '' };
 
 export default function ClientsPage() {
-  const { workspace } = useAuth();
-  const orgId = workspace?.id ?? null;
-  const { items, loading, error, reload } = useCollection(clientsService, orgId);
+  const [items, setItems] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<string>('all');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
-  if (!orgId) return <LoadingState label="Loading workspace…" />;
+  useEffect(() => {
+    const unsub = subscribeClients(
+      (list) => {
+        setItems(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+    return unsub;
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((c) => {
+      if (category !== 'all' && c.category !== category) return false;
+      if (!q) return true;
+      return [c.name, c.phone, c.email, c.address].filter(Boolean).join(' ').toLowerCase().includes(q);
+    });
+  }, [items, search, category]);
+
   if (loading) return <LoadingState label="Loading clients…" />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
 
   const startCreate = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
   const startEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', address: c.address ?? '', source: c.source ?? '' });
+    setForm({ name: c.name, category: c.category, phone: c.phone ?? '', email: c.email ?? '', address: c.address ?? '', notes: c.notes ?? '' });
     setOpen(true);
   };
 
   const save = async () => {
-    if (!orgId || !form.name.trim() || !form.email.trim()) {
-      toast.error('Name and email are required');
+    if (!form.name.trim()) {
+      toast.error('Client name is required');
       return;
     }
     setSaving(true);
     try {
-      if (editing) await clientsService.update(orgId, editing.id, { ...form });
-      else await clientsService.create(orgId, { ...form, createdAt: nowIso() });
+      if (editing) await updateItem('clients', editing.id, { ...form });
+      else await createItem('clients', { ...form });
       toast.success(editing ? 'Client updated' : 'Client added');
       setOpen(false);
     } catch (e) {
@@ -58,9 +84,9 @@ export default function ClientsPage() {
   };
 
   const remove = async (id: string) => {
-    if (!orgId || !window.confirm('Delete this client?')) return;
+    if (!window.confirm('Delete this client?')) return;
     try {
-      await clientsService.remove(orgId, id);
+      await removeItem('clients', id);
       toast.success('Client deleted');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
@@ -69,79 +95,124 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Clients</h1>
-          <p className="text-sm text-muted-foreground">{items.length} clients · won leads create clients automatically</p>
+          <p className="text-sm text-muted-foreground">{filtered.length} of {items.length} clients</p>
         </div>
         <Button onClick={startCreate}><Plus size={16} className="mr-2" />Add client</Button>
       </div>
+
       <Card>
-        <CardHeader><CardTitle>All clients</CardTitle></CardHeader>
+        <CardContent className="pt-4 flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search name, phone, email, address…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="w-full sm:w-48"><SelectValue placeholder="Category" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {CLIENT_CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Client directory</CardTitle></CardHeader>
         <CardContent>
-          {items.length === 0 ? <EmptyState title="No clients yet" hint="Won leads create clients automatically." /> : (
-            <>
-              <div className="overflow-x-auto hidden md:block">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Company</TableHead><TableHead>Phone</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {items.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
-                        <TableCell>{c.email}</TableCell>
-                        <TableCell>{c.company ?? '—'}</TableCell>
-                        <TableCell>{c.phone ?? '—'}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => startEdit(c)} aria-label="Edit"><Pencil size={14} /></Button>
-                            <Button size="icon" variant="ghost" onClick={() => remove(c.id)} aria-label="Delete"><Trash2 size={14} /></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="grid gap-3 md:hidden">
-                {items.map((c) => (
-                  <div key={c.id} className="rounded-lg border bg-card p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold truncate">{c.name}</p>
-                        {c.company ? <p className="text-sm text-muted-foreground truncate">{c.company}</p> : null}
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button size="icon" variant="ghost" onClick={() => startEdit(c)} aria-label="Edit"><Pencil size={14} /></Button>
-                        <Button size="icon" variant="ghost" onClick={() => remove(c.id)} aria-label="Delete"><Trash2 size={14} /></Button>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm truncate">{c.email}</p>
-                    {c.phone ? <p className="text-sm text-muted-foreground">{c.phone}</p> : null}
-                  </div>
-                ))}
-              </div>
-            </>
+          {filtered.length === 0 ? (
+            <EmptyState title="No clients found" description="Add your first FMCG client to get started." />
+          ) : (
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <Table className="min-w-[720px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead className="hidden md:table-cell">Address</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell>
+                        <Link href={`/clients/${c.id}`} className="font-medium text-primary hover:underline">
+                          {c.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell><Badge variant="secondary">{c.category}</Badge></TableCell>
+                      <TableCell>{c.phone || '—'}</TableCell>
+                      <TableCell className="hidden md:table-cell max-w-48 truncate">{c.address || '—'}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => startEdit(c)} aria-label="Edit client"><Pencil size={16} /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => remove(c.id)} aria-label="Delete client"><Trash2 size={16} /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit client' : 'Add client'}</DialogTitle>
-            <DialogDescription>Client details used across quotes, invoices and projects.</DialogDescription>
+            <DialogDescription>Hotel, Restaurant, Mall, School, Office, PG, Bakery or Catering.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
-            <div className="space-y-2"><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Email</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2"><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Company</Label><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></div>
+            <div className="grid gap-1.5">
+              <Label>Name *</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
-            <div className="space-y-2"><Label>Address</Label><Textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
+            <div className="grid gap-1.5">
+              <Label>Category</Label>
+              <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v as ClientCategory })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CLIENT_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Email</Label>
+                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Address</Label>
+              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Notes</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save client'}</Button>
+            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

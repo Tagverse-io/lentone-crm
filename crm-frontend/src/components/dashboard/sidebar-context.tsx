@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useWorkspace } from '@/lib/settings/workspace-context';
+import { createContext, useContext, useState, ReactNode } from 'react';
 
 interface SidebarContextType {
   mobileOpen: boolean;
@@ -26,8 +25,6 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     }
     return false;
   });
-  const [initialized, setInitialized] = useState(false);
-  const { settings } = useWorkspace();
 
   const setCollapsed = (val: boolean) => {
     setCollapsedState(val);
@@ -35,13 +32,6 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('sidebar_collapsed', String(val));
     }
   };
-
-  useEffect(() => {
-    if (!initialized && settings?.appearance?.sidebar_collapsed !== undefined) {
-      setCollapsed(settings.appearance.sidebar_collapsed);
-      setInitialized(true);
-    }
-  }, [settings?.appearance?.sidebar_collapsed, initialized]);
 
   return (
     <SidebarContext.Provider value={{ mobileOpen, setMobileOpen, collapsed, setCollapsed }}>

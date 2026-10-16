@@ -3,11 +3,12 @@
 import { Loader2 } from 'lucide-react';
 import { Button } from './button';
 
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+export function EmptyState({ title, hint, description }: { title: string; hint?: string; description?: string }) {
+  const sub = hint ?? description;
   return (
     <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
       <p className="font-medium">{title}</p>
-      {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
+      {sub ? <p className="text-sm text-muted-foreground">{sub}</p> : null}
     </div>
   );
 }

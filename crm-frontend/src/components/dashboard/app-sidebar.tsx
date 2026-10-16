@@ -4,10 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { subscribeToLeads } from '@/lib/firebase/database';
-import { usePermissions } from '@/components/context/permissions-context';
+import { subscribeLeads } from '@/lib/db';
 import { useSidebar } from './sidebar-context';
-import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
 import { brand, logoFilterClass } from '@/brand.config';
 import {
@@ -18,53 +16,18 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   LayoutDashboard,
   Users,
-  Contact2,
-  DollarSign,
+  Target,
   FileText,
-  FileSpreadsheet,
-  Megaphone,
-  Image,
-  Calendar,
-  Briefcase,
-  CheckSquare,
-  Users2,
-  BarChart3,
-  Puzzle,
+  Receipt,
   Settings,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronsUpDown,
-  Receipt,
+  Truck,
+  MapPin,
   X,
-  Activity,
-  Target,
-  Camera,
-  Mail,
-  Wallet,
-  Hexagon,
-  LineChart,
-  Bell,
-  GitBranch,
-  Handshake,
-  Filter,
-  MessageSquare,
-  TrendingUp,
-  Globe,
-  PenTool,
-  Folder,
-  Rocket,
-  Smartphone
 } from 'lucide-react';
 
 interface NavItem {
@@ -79,90 +42,32 @@ interface NavGroup {
   items: NavItem[];
 }
 
-interface NavConfig {
-  topItems: NavItem[];
-  groups: NavGroup[];
-}
-
-function getNavConfig(leadCount: number, hasPermission: (module: string, action: 'view' | 'edit' | 'delete') => boolean): NavConfig {
-  // Filter items based on permissions
-  const filterByPermission = (items: NavItem[], module: string) =>
-    hasPermission(module, 'view') ? items : [];
-  // Module flags from NEXT_PUBLIC_MODULE_* (brand.modules) — do not delete the flags.
-  const m = brand.modules;
-
+function getNavConfig(openLeadCount: number): { topItems: NavItem[]; groups: NavGroup[] } {
   return {
-    topItems: m.dashboard
-      ? [{ title: 'Dashboard', href: '/dashboard', icon: Hexagon }]
-      : [],
+    topItems: [{ title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
     groups: [
-      ...(m.crm
-        ? [
-            {
-              title: 'CRM',
-              items: [
-                ...filterByPermission([{ title: 'Leads', href: '/leads', icon: Target, badge: leadCount || undefined }], 'leads'),
-                ...filterByPermission(
-                  [
-                    { title: 'Clients', href: '/clients', icon: Contact2 },
-                    { title: 'Contacts', href: '/contacts', icon: Contact2 },
-                    { title: 'Follow-ups', href: '/follow-ups', icon: Bell },
-                    { title: 'Pipelines', href: '/pipeline', icon: GitBranch },
-                  ],
-                  'contracts',
-                ), // Reusing contracts perms for general CRM for now
-              ],
-            },
-          ]
-        : []),
-      ...(m.sales
-        ? [
-            {
-              title: 'Revenue Hub',
-              items: [
-                ...filterByPermission(
-                  [
-                    { title: 'Quotations', href: '/quotes', icon: FileText },
-                    { title: 'Invoices', href: '/invoices', icon: Receipt },
-                  ],
-                  'contracts',
-                ),
-                ...filterByPermission([{ title: 'Payments', href: '/payments', icon: Wallet }], 'payments'),
-              ],
-            },
-          ]
-        : []),
       {
-        title: 'Workspace',
+        title: 'Sales',
         items: [
-          ...(m.projects
-            ? filterByPermission(
-                [
-                  { title: 'Projects', href: '/projects', icon: Briefcase },
-                  { title: 'Tasks', href: '/tasks', icon: CheckSquare },
-                ],
-                'workspace',
-              )
-            : []),
-          ...(m.calendar ? filterByPermission([{ title: 'Calendar', href: '/calendar', icon: Calendar }], 'workspace') : []),
+          { title: 'Clients', href: '/clients', icon: Users },
+          { title: 'Lead Management', href: '/leads', icon: Target, badge: openLeadCount || undefined },
         ],
       },
-      ...(m.marketing
-        ? [
-            {
-              title: 'Marketing',
-              items: filterByPermission(
-                [
-                  { title: 'Social Media', href: '/social', icon: Smartphone },
-                  { title: 'Content Calendar', href: '/content-calendar', icon: Calendar },
-                  { title: 'Video Pipeline', href: '/video', icon: Camera },
-                ],
-                'workspace',
-              ),
-            },
-          ]
-        : []),
-    ].filter((g) => g.items.length > 0)
+      {
+        title: 'Operations',
+        items: [
+          { title: 'Field Force', href: '/field-force', icon: MapPin },
+          { title: 'Delivery', href: '/deliveries', icon: Truck },
+        ],
+      },
+      {
+        title: 'Revenue',
+        items: [
+          { title: 'Quotations', href: '/quotes', icon: FileText },
+          { title: 'Invoices', href: '/invoices', icon: Receipt },
+        ],
+      },
+    ],
   };
 }
 
@@ -175,60 +80,27 @@ function SidebarNav({ collapsed, onToggleGroup, expandedGroups, leadCount, pathn
   companyLogo: string;
   companyName: string;
 }) {
-  const { hasPermission } = usePermissions();
-  const { availableWorkspaces, switchWorkspace, workspace } = useAuth();
-  const { topItems, groups: navGroups } = getNavConfig(leadCount, hasPermission);
-  // Monochrome brand mark: keep visible in both themes (uploaded logos as-is).
+  const { topItems, groups: navGroups } = getNavConfig(leadCount);
   const logoSrc = companyLogo || brand.logo;
   const logoFilter = companyLogo ? '' : logoFilterClass();
 
-  const WorkspaceSelector = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 min-w-0 hover:bg-sidebar-muted p-1 rounded-md transition-colors w-full text-left">
+  return (
+    <>
+      <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logoSrc} alt={companyName || brand.appName} className={`w-8 h-8 rounded-lg object-contain shrink-0 ${logoFilter}`} />
           {!collapsed && (
             <div className="flex flex-col flex-1 min-w-0">
               <span className="font-semibold text-sm tracking-tight truncate">
-                {companyName || 'CRM'}
+                {companyName || brand.appName}
               </span>
               <span className="text-xs text-sidebar-muted-foreground truncate">
-                {workspace?.setup_completed ? 'Active Workspace' : 'Setup Required'}
+                Field-force CRM
               </span>
             </div>
           )}
-          {!collapsed && <ChevronsUpDown size={14} className="text-sidebar-muted-foreground ml-auto shrink-0" />}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {availableWorkspaces?.map((ws) => (
-          <DropdownMenuItem 
-            key={ws.id}
-            onClick={() => switchWorkspace(ws.id)}
-            className="flex items-center gap-2 cursor-pointer"
-          >
-            <div className="w-6 h-6 rounded bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-              {ws.name.charAt(0)}
-            </div>
-            <div className="flex flex-col flex-1 min-w-0">
-              <span className="text-sm font-medium truncate">{ws.name}</span>
-            </div>
-            {ws.id === workspace?.id && (
-              <div className="w-2 h-2 rounded-full bg-green-500 ml-auto shrink-0" />
-            )}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
-  return (
-    <>
-      <div className="flex items-center gap-2 px-4 h-16 border-b shrink-0">
-        <WorkspaceSelector />
+        </div>
         <button
           onClick={() => onToggleGroup('__collapse__')}
           className="ml-auto p-1.5 rounded-md hover:bg-sidebar-muted text-sidebar-muted-foreground shrink-0 hidden lg:block"
@@ -319,7 +191,6 @@ function SidebarNav({ collapsed, onToggleGroup, expandedGroups, leadCount, pathn
       </div>
 
       <div className="border-t p-2 space-y-0.5 shrink-0">
-
         <Link
           href="/settings"
           className={cn(
@@ -341,20 +212,18 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const [leadCount, setLeadCount] = useState(0);
-  const { companyName, logoUrl } = useWorkspace();
-  const { workspace, user } = useAuth();
-  const companyId = workspace?.id;
+  const { user, workspace } = useAuth();
+  const companyName = workspace?.name || brand.appName;
 
   useEffect(() => {
-    if (!companyId) return;
-    const unsub = subscribeToLeads(companyId, (leads) => {
-      setLeadCount(leads.length);
-    });
-    return () => unsub();
-  }, [companyId]);
+    const unsub = subscribeLeads(
+      (leads) => setLeadCount(leads.filter((l) => l.stage !== 'Won' && l.stage !== 'Lost').length),
+      () => setLeadCount(0),
+    );
+    return unsub;
+  }, []);
 
-  const { hasPermission } = usePermissions();
-  const { topItems, groups: navGroups } = getNavConfig(leadCount, hasPermission);
+  const { topItems, groups: navGroups } = getNavConfig(leadCount);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
     Object.fromEntries(navGroups.map((g) => [g.title, true]))
   );
@@ -374,8 +243,8 @@ export function AppSidebar() {
       expandedGroups={expandedGroups}
       leadCount={leadCount}
       pathname={pathname}
-      companyLogo={logoUrl}
-      companyName={companyName}
+      companyLogo={brand.logo}
+      companyName={user ? companyName : companyName}
     />
   );
 
@@ -395,9 +264,9 @@ export function AppSidebar() {
           <div className="flex h-16 items-center justify-between px-4 border-b">
             <div className="flex items-center gap-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logoUrl || brand.logo} alt={companyName || brand.appName} className={`w-8 h-8 rounded-lg object-contain ${!logoUrl ? logoFilterClass() : ''}`} />
+              <img src={brand.logo} alt={companyName} className={`w-8 h-8 rounded-lg object-contain ${logoFilterClass()}`} />
               <SheetTitle className="font-semibold text-lg tracking-tight">
-                {companyName || 'CRM'}
+                {companyName}
               </SheetTitle>
             </div>
             <SheetDescription className="sr-only">Navigation menu</SheetDescription>

@@ -1,283 +1,260 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Download, Eye, MoreHorizontal, Pencil, Trash2, FileText } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ResponsiveTable } from '@/components/ui/responsive-table';
-import { getQuotations, deleteQuotation, convertQuotationToInvoice } from '@/lib/firebase/database';
-import type { Quotation } from '@/lib/db/types';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Pencil, Trash2, Download, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import { useFmt } from '@/lib/format';
-import { generateQuotationPdf, downloadPdf, openPdfPreview } from '@/lib/pdf-engine/generator';
-import { getCompanySettings, preloadLogo } from '@/lib/pdf-engine/helpers';
-import { useAuth } from '@/lib/firebase/auth-context';
-import { DataPagination } from '@/components/ui/data-pagination';
+import {
+  QUOTATION_STATUSES,
+  createItem,
+  getCollection,
+  quotationTotal,
+  removeItem,
+  subscribeQuotations,
+  updateItem,
+  type Client,
+  type Quotation,
+  type QuotationLineItem,
+  type QuotationStatus,
+} from '@/lib/db';
+import { exportDocumentPdf } from '@/lib/pdf';
+import { EmptyState, LoadingState } from '@/components/ui/states';
 
-const statusStyles: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  sent: 'bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400',
-  accepted: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
-  rejected: 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400',
-  expired: 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
-};
+const EMPTY_ITEM: QuotationLineItem = { description: '', quantity: 1, unitPrice: 0 };
 
-const PAGE_SIZE = 25;
+function money(n: number): string {
+  return `₹${(n || 0).toLocaleString('en-IN')}`;
+}
 
 export default function QuotesPage() {
-  const router = useRouter();
-  const { workspace, user } = useAuth();
-  const fmt = useFmt();
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotes, setQuotes] = useState<Quotation[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; loading?: boolean }>({ open: false });
-  const [page, setPage] = useState(1);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Quotation | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [items, setItems] = useState<QuotationLineItem[]>([{ ...EMPTY_ITEM }]);
+  const [status, setStatus] = useState<QuotationStatus>('Draft');
+  const [saving, setSaving] = useState(false);
 
-  async function load() {
-    if (!workspace?.id) {
-      setLoading(false);
+  useEffect(() => {
+    getCollection<Client>('clients').then(setClients).catch(() => undefined);
+    return subscribeQuotations(
+      (list) => {
+        setQuotes(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+  }, []);
+
+  if (loading) return <LoadingState label="Loading quotations…" />;
+
+  const total = quotationTotal(items);
+  const nextNumber = `Q-${new Date().getFullYear()}-${String(quotes.length + 1).padStart(3, '0')}`;
+
+  const startCreate = () => {
+    setEditing(null);
+    setClientId('');
+    setItems([{ ...EMPTY_ITEM }]);
+    setStatus('Draft');
+    setOpen(true);
+  };
+  const startEdit = (q: Quotation) => {
+    setEditing(q);
+    setClientId(q.clientId);
+    setItems(q.items.length > 0 ? q.items.map((i) => ({ ...i })) : [{ ...EMPTY_ITEM }]);
+    setStatus(q.status);
+    setOpen(true);
+  };
+
+  const save = async () => {
+    if (!clientId) {
+      toast.error('Client is required');
       return;
     }
-    setLoading(true);
+    const cleanItems = items.filter((i) => i.description.trim());
+    if (cleanItems.length === 0) {
+      toast.error('Add at least one line item');
+      return;
+    }
+    setSaving(true);
     try {
-      const data = await getQuotations(workspace?.id);
-      setQuotations(data);
-      // Preload logo in background so PDF generation is instant
-      getCompanySettings(workspace?.id || user?.company_id || '').then(s => { if (s.logo_url) preloadLogo(s.logo_url); });
-    } catch {
-      toast.error('Failed to load quotes');
+      const client = clients.find((c) => c.id === clientId);
+      const data = {
+        clientId,
+        clientName: client?.name,
+        items: cleanItems,
+        total: quotationTotal(cleanItems),
+        status,
+      };
+      if (editing) await updateItem('quotations', editing.id, data);
+      else await createItem('quotations', { number: nextNumber, ...data });
+      toast.success(editing ? 'Quotation updated' : 'Quotation created');
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }
+  };
 
-  useEffect(() => { load(); }, [workspace?.id]);
-
-  useEffect(() => { setPage(1); }, [search, statusFilter]);
-
-  const filtered = quotations.filter((q) => {
-    if (statusFilter !== 'all' && q.status !== statusFilter) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      return (
-        q.quotation_number.toLowerCase().includes(s) ||
-        (q.client_name || '').toLowerCase().includes(s) ||
-        (q.client_company || '').toLowerCase().includes(s)
-      );
-    }
-    return true;
-  });
-
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
-
-  async function handleConvertToInvoice(q: Quotation) {
-    const toastId = toast.loading('Converting quote to invoice...');
+  const remove = async (id: string) => {
+    if (!window.confirm('Delete this quotation?')) return;
     try {
-      const invoiceId = await convertQuotationToInvoice(q);
-      if (invoiceId) {
-        toast.success('Quote converted to invoice successfully', { id: toastId });
-        router.push(`/invoices/${invoiceId}`);
-      } else {
-        toast.error('Failed to convert quote to invoice', { id: toastId });
-      }
-    } catch {
-      toast.error('Failed to convert quote to invoice', { id: toastId });
+      await removeItem('quotations', id);
+      toast.success('Quotation deleted');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
     }
-  }
+  };
 
-  async function handleDelete(q: Quotation) {
-    setConfirmState({ open: true, id: q.id });
-  }
-
-  async function onDeleteConfirm() {
-    if (!confirmState.id) return;
-    setConfirmState((prev) => ({ ...prev, loading: true }));
+  const createInvoice = async (q: Quotation) => {
     try {
-      await deleteQuotation(confirmState.id);
-      toast.success('Quote deleted');
-      load();
-    } catch {
-      toast.error('Failed to delete quote');
-    } finally {
-      setConfirmState({ open: false });
+      const invNumber = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      await createItem('invoices', {
+        number: invNumber,
+        clientId: q.clientId,
+        clientName: q.clientName,
+        quotationId: q.id,
+        items: q.items,
+        total: q.total,
+        status: 'Unpaid',
+      });
+      toast.success(`Invoice ${invNumber} created from quotation`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Invoice creation failed');
     }
-  }
+  };
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64"><p className="text-muted-foreground">Loading quotes...</p></div>;
-  }
+  const downloadPdf = (q: Quotation) => {
+    exportDocumentPdf({
+      title: 'Quotation',
+      number: q.number,
+      clientName: q.clientName,
+      items: q.items,
+      total: q.total,
+      status: q.status,
+    });
+  };
+
+  const setItem = (idx: number, patch: Partial<QuotationLineItem>) => {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Quotes</h2>
-          <p className="text-sm text-muted-foreground">Create and manage customer quotes</p>
+          <h1 className="text-2xl font-bold tracking-tight">Quotations</h1>
+          <p className="text-sm text-muted-foreground">{quotes.length} quotations · accept one to create its invoice</p>
         </div>
-        <Button onClick={() => router.push('/quotes/new')} className="w-full sm:w-auto">
-          <Plus size={16} className="mr-2" />
-          New Quote
-        </Button>
+        <Button onClick={startCreate}><Plus size={16} className="mr-2" />New quotation</Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search quotes..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="sent">Sent</SelectItem>
-            <SelectItem value="accepted">Accepted</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Card>
+        <CardHeader><CardTitle>All quotations</CardTitle></CardHeader>
+        <CardContent>
+          {quotes.length === 0 ? (
+            <EmptyState title="No quotations" description="Create your first quotation with line items." />
+          ) : (
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Number</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {quotes.map((q) => (
+                    <TableRow key={q.id}>
+                      <TableCell className="font-medium">{q.number}</TableCell>
+                      <TableCell>{q.clientName || '—'}</TableCell>
+                      <TableCell className="text-right">{money(q.total)}</TableCell>
+                      <TableCell><Badge variant={q.status === 'Accepted' ? 'default' : 'secondary'}>{q.status}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" title="Export PDF" onClick={() => downloadPdf(q)} aria-label="Export PDF"><Download size={16} /></Button>
+                          {q.status === 'Accepted' && (
+                            <Button variant="ghost" size="icon" title="Create invoice" onClick={() => createInvoice(q)} aria-label="Create invoice"><FileCheck size={16} /></Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => startEdit(q)} aria-label="Edit quotation"><Pencil size={16} /></Button>
+                          <Button variant="ghost" size="icon" onClick={() => remove(q.id)} aria-label="Delete quotation"><Trash2 size={16} /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {filtered.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <ResponsiveTable
-              data={paginatedData}
-              keyExtractor={(q) => q.id}
-              mobileCardTitle={(q) => q.quotation_number}
-              columns={[
-                {
-                  key: 'id',
-                  header: 'Quote ID',
-                  render: (q) => <span className="text-sm font-medium">{q.quotation_number}</span>,
-                },
-                {
-                  key: 'client',
-                  header: 'Client',
-                  render: (q) => <span className="text-sm">{q.client_name || q.client_company || '—'}</span>,
-                },
-                {
-                  key: 'value',
-                  header: 'Value',
-                  render: (q) => <span className="text-sm font-medium">{fmt.money(q.amount)}</span>,
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (q) => (
-                    <Badge variant="secondary" className={statusStyles[q.status] || ''}>
-                      {q.status.charAt(0).toUpperCase() + q.status.slice(1)}
-                    </Badge>
-                  ),
-                },
-                {
-                  key: 'date',
-                  header: 'Date',
-                  hideOnMobile: true,
-                  render: (q) => <span className="text-sm text-muted-foreground">{fmt.date(q.created_at)}</span>,
-                },
-                {
-                  key: 'valid',
-                  header: 'Valid Until',
-                  hideOnMobile: true,
-                  render: (q) => <span className="text-sm text-muted-foreground">{q.valid_until ? new Date(q.valid_until).toLocaleDateString() : '—'}</span>,
-                },
-                {
-                  key: 'actions',
-                  header: '',
-                  className: 'w-24',
-                  render: (q) => (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Quote actions">
-                          <MoreHorizontal size={14} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => router.push(`/quotes/${q.id}`)}>
-                          <Pencil size={14} className="mr-2" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={async () => {
-                          const id = toast.loading('Generating PDF…');
-                          try {
-                            const pdf = await generateQuotationPdf(workspace?.id || user?.company_id || '', q, null);
-                            await downloadPdf(pdf, `${q.quotation_number}.pdf`);
-                            toast.success('Quote downloaded', { id });
-                          } catch { toast.error('Failed to generate PDF', { id }); }
-                        }}>
-                          <Download size={14} className="mr-2" /> Download
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={async () => {
-                          const id = toast.loading('Generating preview…');
-                          try {
-                            const pdf = await generateQuotationPdf(workspace?.id || user?.company_id || '', q, null);
-                            const url = await openPdfPreview(pdf);
-                            window.open(url, '_blank');
-                            toast.dismiss(id);
-                          } catch { toast.error('Failed to generate preview', { id }); }
-                        }}>
-                          <Eye size={14} className="mr-2" /> Preview
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleConvertToInvoice(q)}>
-                          <FileText size={14} className="mr-2" /> Convert to Invoice
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(q)}>
-                          <Trash2 size={14} className="mr-2" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ),
-                },
-              ]}
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card><CardContent className="py-12 text-center"><p className="text-muted-foreground">No quotes yet</p></CardContent></Card>
-      )}
-
-      <ConfirmDialog
-        open={confirmState.open}
-        onOpenChange={(open) => setConfirmState({ open })}
-        title="Delete Quote"
-        description="Are you sure you want to delete this quote? This action cannot be undone."
-        onConfirm={onDeleteConfirm}
-      />
-
-      {filtered.length > PAGE_SIZE && (
-        <DataPagination
-          page={page}
-          totalItems={filtered.length}
-          pageSize={PAGE_SIZE}
-          onPageChange={setPage}
-        />
-      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? `Edit ${editing.number}` : `New quotation ${nextNumber}`}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Client *</Label>
+                <Select value={clientId || 'none'} onValueChange={(v) => setClientId(v === 'none' ? '' : v)}>
+                  <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select client</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as QuotationStatus)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {QUOTATION_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Line items</Label>
+              {items.map((it, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_70px_100px_32px] gap-2">
+                  <Input placeholder="Description" value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })} />
+                  <Input type="number" placeholder="Qty" value={it.quantity} onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })} />
+                  <Input type="number" placeholder="Unit ₹" value={it.unitPrice} onChange={(e) => setItem(idx, { unitPrice: Number(e.target.value) })} />
+                  <Button variant="ghost" size="icon" onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))} aria-label="Remove line"><Trash2 size={16} /></Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" className="w-fit" onClick={() => setItems((prev) => [...prev, { ...EMPTY_ITEM }])}>
+                <Plus size={14} className="mr-1" />Add line
+              </Button>
+            </div>
+            <div className="text-right font-semibold">Total: {money(total)}</div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

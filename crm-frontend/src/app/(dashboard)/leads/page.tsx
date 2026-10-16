@@ -1,676 +1,329 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import {
-  Users,
-  UserPlus,
-  Search,
-  Filter,
-  SlidersHorizontal,
-  X,
-  Eye,
-  Pencil,
-  Trash2,
-  MoreHorizontal,
-  Mail,
-  Phone,
-  Building2,
-  Star,
-  TrendingUp,
-  MessageCircle,
-  Wifi,
-} from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ResponsiveTable } from '@/components/ui/responsive-table';
-import { DataPagination } from '@/components/ui/data-pagination';
-import { KpiCard } from '@/components/dashboard/kpi-card';
-import { getLeads, deleteLead } from '@/lib/firebase/database';
-import type { Lead } from '@/lib/db/types';
-import { LeadDialog } from '@/components/dialogs/lead-dialog';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { cn } from '@/lib/utils';
-import { useFmt } from '@/lib/format';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  LEAD_STAGES,
+  createItem,
+  getCollection,
+  removeItem,
+  subscribeLeads,
+  updateItem,
+  type Client,
+  type Lead,
+  type LeadStage,
+} from '@/lib/db';
+import { EmptyState, LoadingState } from '@/components/ui/states';
 
-const statusColors: Record<string, string> = {
-  new: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  contacted: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-  qualified: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
-  proposal: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  negotiation: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-  won: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
-  lost: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+const EMPTY = { contactName: '', phone: '', clientId: '', value: '', notes: '', stage: 'New' as LeadStage };
+
+const STAGE_COLORS: Record<LeadStage, string> = {
+  New: 'bg-blue-500',
+  Contacted: 'bg-amber-500',
+  Qualified: 'bg-violet-500',
+  Proposal: 'bg-purple-500',
+  Negotiation: 'bg-emerald-500',
+  Won: 'bg-green-600',
+  Lost: 'bg-red-500',
 };
 
-const PAGE_SIZE = 25;
-
-const stageTabs = [
-  { value: 'all', label: 'All' },
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'negotiation', label: 'Negotiation' },
-  { value: 'won', label: 'Won' },
-  { value: 'lost', label: 'Lost' },
-] as const;
-
-import { useAuth } from '@/lib/firebase/auth-context';
-import { useWorkspace } from '@/lib/settings/workspace-context';
-import { usePermissions } from '@/components/context/permissions-context';
+function money(n?: number): string {
+  if (!n) return '—';
+  return `₹${n.toLocaleString('en-IN')}`;
+}
 
 export default function LeadsPage() {
-  const { workspace, user } = useAuth();
-  const fmt = useFmt();
-  const { hasPermission } = usePermissions();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [search, setSearch] = useState('');
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingLead, setEditingLead] = useState<Lead | null>(null);
-  const [viewingLead, setViewingLead] = useState<Lead | null>(null);
-  const [stageTab, setStageTab] = useState('all');
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; loading?: boolean }>({ open: false });
-  const [page, setPage] = useState(1);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [advFilters, setAdvFilters] = useState({
-    company: '',
-    source: 'all',
-    stage: 'all',
-    tags: '',
-    wa: 'all',
-  });
-
-  async function load() {
-    try {
-      // Pass the logged-in user's workspace_id to securely filter leads
-      const data = await getLeads(workspace?.id);
-      setLeads(data);
-    } catch (err: any) {
-      console.error('Failed to load leads:', err);
-      toast.error(`Failed to load leads: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [clientFilter, setClientFilter] = useState<string>('all');
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Lead | null>(null);
+  const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (workspace?.id) {
-      load();
-    } else {
-      setLoading(false);
-    }
-  }, [workspace?.id]);
-
-  useEffect(() => { setPage(1); }, [search, stageTab, advFilters]);
-
-  const kpis = useMemo(() => {
-    const total = leads.length;
-    const newThisWeek = leads.filter((l) => l.status === 'new').length;
-    const highValueLeads = leads.filter((l) => (l.estimated_value || 0) >= 10000).length;
-    const avgValue = total > 0 ? Math.round(leads.reduce((s, l) => s + (l.estimated_value || 0), 0) / total) : 0;
-    return { total, newThisWeek, highValueLeads, avgValue };
-  }, [leads]);
-
-  const filtered = useMemo(() => {
-    let list = [...leads];
-
-    if (stageTab !== 'all') {
-      list = list.filter((l) => l.status === stageTab);
-    }
-
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (l) =>
-          l.name.toLowerCase().includes(q) ||
-          l.company?.toLowerCase().includes(q) ||
-          l.email.toLowerCase().includes(q)
-      );
-    }
-
-    if (advFilters.company) {
-      const q = advFilters.company.toLowerCase();
-      list = list.filter((l) => l.company?.toLowerCase().includes(q));
-    }
-    if (advFilters.source !== 'all') {
-      list = list.filter((l) => l.source === advFilters.source);
-    }
-    if (advFilters.stage !== 'all') {
-      list = list.filter((l) => l.status === advFilters.stage);
-    }
-    if (advFilters.tags) {
-      const tagList = advFilters.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
-      list = list.filter((l) => tagList.some((t) => (l.tags || []).map((tg) => tg.toLowerCase()).includes(t)));
-    }
-    if (advFilters.wa === 'active') {
-      list = list.filter((l) => l.phone);
-    } else if (advFilters.wa === 'inactive') {
-      list = list.filter((l) => !l.phone);
-    }
-
-    return list;
-  }, [leads, stageTab, search, advFilters]);
-
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
-
-  function clearAdvanced() {
-    setAdvFilters({ company: '', source: 'all', stage: 'all', tags: '', wa: 'all' });
-  }
-
-  function hasActiveFilters() {
-    return advFilters.company || advFilters.source !== 'all' || advFilters.stage !== 'all' || advFilters.tags || advFilters.wa !== 'all';
-  }
-
-  async function handleDelete(lead: Lead) {
-    setConfirmState({ open: true, id: lead.id });
-  }
-
-  async function onDeleteConfirm() {
-    if (!confirmState.id) return;
-    setDeleting(confirmState.id);
-    setConfirmState((prev) => ({ ...prev, loading: true }));
-    try {
-      await deleteLead(confirmState.id);
-      toast.success('Lead deleted');
-      load();
-      setConfirmState({ open: false, loading: false });
-    } catch {
-      toast.error('Failed to delete lead');
-      setConfirmState({ open: false, loading: false });
-    } finally {
-      setDeleting(null);
-    }
-  }
-
-  function openEdit(lead: Lead) {
-    setEditingLead(lead);
-    setDialogOpen(true);
-  }
-
-  function openCreate() {
-    setEditingLead(null);
-    setDialogOpen(true);
-  }
-
-  function openView(lead: Lead) {
-    setViewingLead(lead);
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Loading leads...</p>
-      </div>
+    getCollection<Client>('clients').then(setClients).catch(() => undefined);
+    const unsub = subscribeLeads(
+      (list) => {
+        setLeads(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        setLoading(false);
+      },
+      () => setLoading(false),
     );
-  }
+    return unsub;
+  }, []);
+
+  const visible = useMemo(
+    () => (clientFilter === 'all' ? leads : leads.filter((l) => l.clientId === clientFilter)),
+    [leads, clientFilter],
+  );
+
+  if (loading) return <LoadingState label="Loading leads…" />;
+
+  const startCreate = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
+  const startEdit = (l: Lead) => {
+    setEditing(l);
+    setForm({
+      contactName: l.contactName,
+      phone: l.phone ?? '',
+      clientId: l.clientId ?? '',
+      value: l.value ? String(l.value) : '',
+      notes: l.notes ?? '',
+      stage: l.stage,
+    });
+    setOpen(true);
+  };
+
+  const save = async () => {
+    if (!form.contactName.trim()) {
+      toast.error('Contact name is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const client = clients.find((c) => c.id === form.clientId);
+      const data = {
+        contactName: form.contactName.trim(),
+        phone: form.phone || undefined,
+        clientId: form.clientId || undefined,
+        clientName: client?.name,
+        value: form.value ? Number(form.value) : undefined,
+        notes: form.notes || undefined,
+        stage: form.stage,
+      };
+      if (editing) await updateItem('leads', editing.id, data);
+      else await createItem('leads', data);
+      toast.success(editing ? 'Lead updated' : 'Lead added');
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm('Delete this lead?')) return;
+    try {
+      await removeItem('leads', id);
+      toast.success('Lead deleted');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const onDragEnd = async (result: DropResult) => {
+    const { destination, draggableId } = result;
+    if (!destination) return;
+    const stage = destination.droppableId as LeadStage;
+    const lead = leads.find((l) => l.id === draggableId);
+    if (!lead || lead.stage === stage) return;
+    try {
+      await updateItem('leads', lead.id, { stage });
+      toast.success(`Moved to ${stage}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Move failed');
+    }
+  };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <KpiCard
-          title="Total Leads"
-          value={kpis.total.toString()}
-          change={`${leads.length > 0 ? '100' : '0'}% of pipeline`}
-          trend="neutral"
-          icon={Users}
-          description="All-time leads"
-        />
-        <KpiCard
-          title="New This Week"
-          value={kpis.newThisWeek.toString()}
-          change={kpis.newThisWeek > 0 ? `${Math.round((kpis.newThisWeek / Math.max(leads.length, 1)) * 100)}% of total` : 'No new leads'}
-          trend={kpis.newThisWeek > 0 ? 'up' : 'neutral'}
-          icon={UserPlus}
-          description="Stage: New"
-        />
-        <KpiCard
-          title="High Value Leads"
-          value={kpis.highValueLeads.toString()}
-          change={kpis.highValueLeads > 0 ? `${Math.round((kpis.highValueLeads / Math.max(leads.length, 1)) * 100)}% of total` : 'No high value leads'}
-          trend={kpis.highValueLeads > 0 ? 'up' : 'neutral'}
-          icon={Star}
-          description="Value &ge; $10k"
-        />
-        <KpiCard
-          title="Avg. Est. Value"
-          value={fmt.money(kpis.avgValue)}
-          change={kpis.avgValue >= 10000 ? 'High' : kpis.avgValue >= 1000 ? 'Moderate' : 'Low'}
-          trend={kpis.avgValue >= 10000 ? 'up' : kpis.avgValue >= 1000 ? 'neutral' : 'down'}
-          icon={TrendingUp}
-          description="Across all leads"
-        />
-      </div>
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Leads</h2>
-          <p className="text-sm text-muted-foreground">Manage and track your sales leads</p>
+          <h1 className="text-2xl font-bold tracking-tight">Lead Management</h1>
+          <p className="text-sm text-muted-foreground">Sales pipeline per client — drag cards between stages.</p>
         </div>
-        <Button onClick={openCreate} className="w-full sm:w-auto">
-          <UserPlus size={16} className="mr-2" />
-          New Lead
-        </Button>
+        <Button onClick={startCreate}><Plus size={16} className="mr-2" />Add lead</Button>
       </div>
 
-      {/* Stage Tabs & Search */}
-      <div className="space-y-3 sm:space-y-4">
-        <Tabs value={stageTab} onValueChange={setStageTab}>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <TabsList className="w-full sm:w-auto overflow-x-auto">
-              {stageTabs.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="whitespace-nowrap">
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:flex-none sm:w-64">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search name or company..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Button
-                variant={hasActiveFilters() ? 'default' : 'outline'}
-                size="icon"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="shrink-0"
-              >
-                <Filter size={16} />
-              </Button>
-            </div>
+      <Card>
+        <CardContent className="pt-4">
+          <div className="grid gap-1.5 max-w-sm">
+            <Label>Filter pipeline by client</Label>
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger><SelectValue placeholder="All clients" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </Tabs>
+        </CardContent>
+      </Card>
 
-        {/* Advanced Filters */}
-        {showAdvanced && (
-          <div className="rounded-lg border p-3 sm:p-4 space-y-3 sm:space-y-4 animate-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <SlidersHorizontal size={14} />
-                Advanced Filters
-              </div>
-              {hasActiveFilters() && (
-                <Button variant="ghost" size="sm" onClick={clearAdvanced} className="h-8 gap-1 text-xs">
-                  <X size={12} />
-                  Clear filters
-                </Button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Company</label>
-                <Input
-                  placeholder="Filter by company..."
-                  value={advFilters.company}
-                  onChange={(e) => setAdvFilters((f) => ({ ...f, company: e.target.value }))}
-                  className="h-9"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Source</label>
-                <Select
-                  value={advFilters.source}
-                  onValueChange={(v) => setAdvFilters((f) => ({ ...f, source: v }))}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sources</SelectItem>
-                    <SelectItem value="Website">Website</SelectItem>
-                    <SelectItem value="Facebook">Facebook</SelectItem>
-                    <SelectItem value="Instagram">Instagram</SelectItem>
-                    <SelectItem value="LinkedIn">LinkedIn</SelectItem>
-                    <SelectItem value="Referral">Referral</SelectItem>
-                    <SelectItem value="Email">Email</SelectItem>
-                    <SelectItem value="Cold Call">Cold Call</SelectItem>
-                    <SelectItem value="Event">Event</SelectItem>
-                    <SelectItem value="Google Ads">Google Ads</SelectItem>
-                    <SelectItem value="Manual">Manual</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Stage</label>
-                <Select
-                  value={advFilters.stage}
-                  onValueChange={(v) => setAdvFilters((f) => ({ ...f, stage: v }))}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="contacted">Contacted</SelectItem>
-                    <SelectItem value="qualified">Qualified</SelectItem>
-                    <SelectItem value="proposal">Proposal</SelectItem>
-                    <SelectItem value="negotiation">Negotiation</SelectItem>
-                    <SelectItem value="won">Won</SelectItem>
-                    <SelectItem value="lost">Lost</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Tags</label>
-                <Input
-                  placeholder="e.g. hot, vip..."
-                  value={advFilters.tags}
-                  onChange={(e) => setAdvFilters((f) => ({ ...f, tags: e.target.value }))}
-                  className="h-9"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">WA Active</label>
-                <Select
-                  value={advFilters.wa}
-                  onValueChange={(v) => setAdvFilters((f) => ({ ...f, wa: v }))}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <Tabs defaultValue="board">
+        <TabsList>
+          <TabsTrigger value="board">Pipeline board</TabsTrigger>
+          <TabsTrigger value="list">Lead list</TabsTrigger>
+        </TabsList>
 
-      {/* Table */}
-      {filtered.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <ResponsiveTable
-              data={paginatedData}
-              keyExtractor={(lead) => lead.id}
-              mobileCardTitle={(lead) => lead.name}
-              columns={[
-                {
-                  key: 'name',
-                  header: 'Name',
-                  render: (lead) => (
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                          {lead.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{lead.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1 truncate"><Mail size={10} />{lead.email}</span>
-                          {lead.phone && <span className="flex items-center gap-1"><Phone size={10} />{lead.phone}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'company',
-                  header: 'Company',
-                  hideOnMobile: true,
-                  render: (lead) => (
-                    <div className="flex items-center gap-1.5 text-sm">
-                      <Building2 size={14} className="text-muted-foreground shrink-0" />
-                      <span className="truncate">{lead.company || '—'}</span>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'tags',
-                  header: 'Tags',
-                  hideOnMobile: true,
-                  render: (lead) => (
-                    <div className="flex flex-wrap gap-1 max-w-[140px]">
-                      {(lead.tags?.length ?? 0) > 0 ? (
-                        lead.tags!.map((tag) => (
-                          <Badge
-                            key={tag}
-                            variant="secondary"
-                            className="text-[10px] px-1.5 py-0 font-medium rounded-full"
-                          >
-                            {tag}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </div>
-                  ),
-                },
-                {
-                  key: 'priority',
-                  header: 'Priority',
-                  hideOnMobile: true,
-                  render: (lead) => {
-                    if (!lead.priority) return <span className="text-sm text-muted-foreground">—</span>;
-                    return (
-                      <Badge variant="secondary" className="text-xs font-medium">
-                        {lead.priority}
-                      </Badge>
-                    );
-                  },
-                },
-                {
-                  key: 'status',
-                  header: 'Stage',
-                  render: (lead) => (
-                    <Badge variant="secondary" className={cn('font-medium', statusColors[lead.status] || '')}>
-                      {lead.status}
-                    </Badge>
-                  ),
-                },
-                {
-                  key: 'source',
-                  header: 'Source',
-                  hideOnMobile: true,
-                  render: (lead) => <span className="text-sm">{lead.source || '—'}</span>,
-                },
-
-                {
-                  key: 'wa',
-                  header: 'WA',
-                  hideOnMobile: true,
-                  render: (lead) => (
-                    <div className="flex items-center justify-center">
-                      <span className={cn('flex h-2 w-2 rounded-full', lead.phone ? 'bg-primary' : 'bg-muted-foreground/30')} />
-                    </div>
-                  ),
-                },
-                {
-                  key: 'value',
-                  header: 'Value',
-                  render: (lead) => (
-                    <span className="text-sm font-medium">{lead.estimated_value ? fmt.money(lead.estimated_value) : '—'}</span>
-                  ),
-                },
-                {
-                  key: 'actions',
-                  header: '',
-                  className: 'w-10',
-                  render: (lead) => (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Lead actions">
-                          <MoreHorizontal size={14} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openView(lead)}>
-                          <Eye size={14} className="mr-2" /> View
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEdit(lead)}>
-                          <Pencil size={14} className="mr-2" /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-red-600"
-                          onClick={() => handleDelete(lead)}
-                          disabled={deleting === lead.id}
+        <TabsContent value="board" className="mt-4">
+          {visible.length === 0 ? (
+            <EmptyState title="No leads" description="Add a lead to start the pipeline." />
+          ) : (
+            <DragDropContext onDragEnd={onDragEnd}>
+              <div className="grid grid-flow-col auto-cols-[240px] gap-3 overflow-x-auto pb-2">
+                {LEAD_STAGES.map((stage) => {
+                  const cards = visible.filter((l) => l.stage === stage);
+                  return (
+                    <Droppable droppableId={stage} key={stage}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className={`rounded-lg border bg-muted/40 p-2 space-y-2 min-h-40 ${snapshot.isDraggingOver ? 'ring-2 ring-primary/40' : ''}`}
                         >
-                          <Trash2 size={14} className="mr-2" /> {deleting === lead.id ? 'Deleting...' : 'Delete'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ),
-                },
-              ]}
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">
-              {search || stageTab !== 'all' || hasActiveFilters() ? 'No leads match your filters' : 'No leads yet'}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {filtered.length > PAGE_SIZE && (
-        <DataPagination
-          page={page}
-          totalItems={filtered.length}
-          pageSize={PAGE_SIZE}
-          onPageChange={setPage}
-        />
-      )}
-
-      {/* Lead Create/Edit Dialog */}
-      <LeadDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSaved={load}
-        lead={editingLead}
-      />
-
-      {/* Lead View Dialog */}
-      <Dialog open={!!viewingLead} onOpenChange={(open) => { if (!open) setViewingLead(null); }}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>{viewingLead?.name}</DialogTitle>
-            <DialogDescription>Lead details</DialogDescription>
-          </DialogHeader>
-          {viewingLead && (
-      <div className="space-y-3 sm:space-y-4">
-              <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Email</p>
-                  <p className="text-sm flex items-center gap-1 mt-0.5"><Mail size={12} className="shrink-0" />{viewingLead.email}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Phone</p>
-                  <p className="text-sm flex items-center gap-1 mt-0.5">{viewingLead.phone ? <><Phone size={12} className="shrink-0" />{viewingLead.phone}</> : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Company</p>
-                  <p className="text-sm flex items-center gap-1 mt-0.5">{viewingLead.company ? <><Building2 size={12} className="shrink-0" />{viewingLead.company}</> : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Stage</p>
-                  <Badge variant="secondary" className={cn('mt-0.5', statusColors[viewingLead.status] || '')}>
-                    {viewingLead.status}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Source</p>
-                  <p className="text-sm mt-0.5">{viewingLead.source || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Estimated Value</p>
-                  <p className="text-sm font-medium mt-0.5">{viewingLead.estimated_value ? fmt.money(viewingLead.estimated_value) : '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Owner ID</p>
-                  <p className="text-sm mt-0.5">{viewingLead.owner_id || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Priority</p>
-                  <p className="text-sm mt-0.5">{viewingLead.priority || '—'}</p>
-                </div>
-                {viewingLead.tags && viewingLead.tags.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground font-medium">Tags</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {viewingLead.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0 font-medium rounded-full">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                          <div className="flex items-center gap-2 px-1">
+                            <span className={`w-2 h-2 rounded-full ${STAGE_COLORS[stage]}`} />
+                            <span className="text-xs font-semibold uppercase tracking-wide">{stage}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{cards.length}</span>
+                          </div>
+                          {cards.map((l, idx) => (
+                            <Draggable draggableId={l.id} index={idx} key={l.id}>
+                              {(p, s) => (
+                                <div
+                                  ref={p.innerRef}
+                                  {...p.draggableProps}
+                                  {...p.dragHandleProps}
+                                  className={`rounded-lg border bg-card p-2.5 shadow-sm ${s.isDragging ? 'rotate-1 shadow-md' : ''}`}
+                                >
+                                  <p className="text-sm font-medium truncate">{l.contactName}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{l.clientName || '—'}</p>
+                                  <div className="flex items-center justify-between mt-1.5">
+                                    <span className="text-xs font-semibold">{money(l.value)}</span>
+                                    <span className="text-[11px] text-muted-foreground">{l.phone || ''}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  );
+                })}
               </div>
-              {viewingLead.notes && (
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Notes</p>
-                  <p className="text-sm mt-0.5 text-muted-foreground">{viewingLead.notes}</p>
+            </DragDropContext>
+          )}
+        </TabsContent>
+
+        <TabsContent value="list" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>All leads</CardTitle></CardHeader>
+            <CardContent>
+              {visible.length === 0 ? (
+                <EmptyState title="No leads" description="Add a lead to start the pipeline." />
+              ) : (
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <Table className="min-w-[720px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Stage</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visible.map((l) => (
+                        <TableRow key={l.id}>
+                          <TableCell>
+                            <div className="font-medium">{l.contactName}</div>
+                            <div className="text-xs text-muted-foreground">{l.phone || '—'}</div>
+                          </TableCell>
+                          <TableCell>{l.clientName || '—'}</TableCell>
+                          <TableCell><Badge variant="secondary">{l.stage}</Badge></TableCell>
+                          <TableCell className="text-right">{money(l.value)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" onClick={() => startEdit(l)} aria-label="Edit lead"><Pencil size={16} /></Button>
+                              <Button variant="ghost" size="icon" onClick={() => remove(l.id)} aria-label="Delete lead"><Trash2 size={16} /></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
-              <div className="grid grid-cols-1 gap-3 sm:gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Next Follow-up</p>
-                  <p className="text-sm mt-0.5">{viewingLead.next_follow_up ? new Date(viewingLead.next_follow_up).toLocaleDateString() : '—'}</p>
-                </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Edit lead' : 'Add lead'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label>Contact name *</Label>
+              <Input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Phone</Label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Value (₹)</Label>
+                <Input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
               </div>
             </div>
-          )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Client</Label>
+                <Select value={form.clientId || 'none'} onValueChange={(v) => setForm({ ...form, clientId: v === 'none' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No client</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Stage</Label>
+                <Select value={form.stage} onValueChange={(v) => setForm({ ...form, stage: v as LeadStage })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LEAD_STAGES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Notes</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation */}
-      <ConfirmDialog
-        open={confirmState.open}
-        onOpenChange={(open) => setConfirmState({ open })}
-        title="Delete Lead"
-        description="Are you sure you want to delete this lead? This action cannot be undone."
-        onConfirm={onDeleteConfirm}
-        loading={confirmState.loading}
-      />
     </div>
   );
 }

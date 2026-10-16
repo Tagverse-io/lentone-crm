@@ -1,273 +1,205 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Download, Eye, MoreHorizontal, Pencil, Trash2, Receipt, Loader2, CreditCard } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ResponsiveTable } from '@/components/ui/responsive-table';
-import { getInvoices, deleteInvoice } from '@/lib/firebase/database';
-import { useAuth } from '@/lib/firebase/auth-context';
-import { useWorkspace } from '@/lib/settings/workspace-context';
-import type { Invoice } from '@/lib/db/types';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { DataPagination } from '@/components/ui/data-pagination';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Trash2, Download, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { useFmt } from '@/lib/format';
-import { generateInvoicePdf, downloadPdf, openPdfPreview } from '@/lib/pdf-engine/generator';
-import { getCompanySettings, preloadLogo } from '@/lib/pdf-engine/helpers';
+import {
+  createItem,
+  getCollection,
+  removeItem,
+  subscribeInvoices,
+  updateItem,
+  type Client,
+  type Invoice,
+  type Quotation,
+} from '@/lib/db';
+import { exportDocumentPdf } from '@/lib/pdf';
+import { EmptyState, LoadingState } from '@/components/ui/states';
 
-const statusStyles: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
-  paid: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
-  overdue: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400',
-  cancelled: 'bg-muted text-muted-foreground',
-  credited: 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-400',
-};
-
-const PAGE_SIZE = 25;
+function money(n: number): string {
+  return `₹${(n || 0).toLocaleString('en-IN')}`;
+}
 
 export default function InvoicesPage() {
-  const router = useRouter();
-  const { workspace, user } = useAuth();
-  const fmt = useFmt();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [confirmState, setConfirmState] = useState<{ open: boolean; id?: string; loading?: boolean }>({ open: false });
-  const [page, setPage] = useState(1);
+  const [open, setOpen] = useState(false);
+  const [quotationId, setQuotationId] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!workspace?.id) {
-      setLoading(false);
+  useEffect(() => {
+    getCollection<Client>('clients').then(setClients).catch(() => undefined);
+    getCollection<Quotation>('quotations').then(setQuotations).catch(() => undefined);
+    return subscribeInvoices(
+      (list) => {
+        setInvoices(list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+  }, []);
+
+  if (loading) return <LoadingState label="Loading invoices…" />;
+
+  const acceptedQuotes = quotations.filter((q) => q.status === 'Accepted');
+
+  const startCreate = () => {
+    setQuotationId('');
+    setOpen(true);
+  };
+
+  const save = async () => {
+    if (!quotationId) {
+      toast.error('Select an accepted quotation');
       return;
     }
-    setLoading(true);
-    const data = await getInvoices(workspace?.id);
-    setInvoices(data);
-    setLoading(false);
-    // Preload logo in background so PDF generation is instant
-    getCompanySettings(workspace?.id || user?.company_id || '').then(s => { if (s.logo_url) preloadLogo(s.logo_url); });
-  }, [workspace?.id]);
-
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [search, statusFilter]);
-
-  const filtered = invoices.filter((inv) => {
-    if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
-    if (search) {
-      const s = search.toLowerCase();
-      return (
-        inv.invoice_number.toLowerCase().includes(s) ||
-        (inv.description || '').toLowerCase().includes(s)
-      );
+    const q = quotations.find((x) => x.id === quotationId);
+    if (!q) {
+      toast.error('Quotation not found');
+      return;
     }
-    return true;
-  });
-
-  const paginatedData = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
-
-  async function handleDelete(inv: Invoice) {
-    setConfirmState({ open: true, id: inv.id });
-  }
-
-  async function onDeleteConfirm() {
-    if (!confirmState.id) return;
+    setSaving(true);
     try {
-      await deleteInvoice(confirmState.id);
-      toast.success('Invoice deleted');
-      load();
-      setConfirmState({ open: false });
-    } catch {
-      toast.error('Failed to delete invoice');
-      setConfirmState({ open: false });
+      const invNumber = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      const client = clients.find((c) => c.id === q.clientId);
+      await createItem('invoices', {
+        number: invNumber,
+        clientId: q.clientId,
+        clientName: client?.name ?? q.clientName,
+        quotationId: q.id,
+        items: q.items,
+        total: q.total,
+        status: 'Unpaid',
+      });
+      toast.success(`Invoice ${invNumber} created`);
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Create failed');
+    } finally {
+      setSaving(false);
     }
-  }
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 size={32} className="animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const markPaid = async (inv: Invoice) => {
+    try {
+      await updateItem('invoices', inv.id, { status: 'Paid', paidAt: new Date().toISOString() });
+      toast.success('Marked as paid');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm('Delete this invoice?')) return;
+    try {
+      await removeItem('invoices', id);
+      toast.success('Invoice deleted');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const downloadPdf = (inv: Invoice) => {
+    exportDocumentPdf({
+      title: 'Invoice',
+      number: inv.number,
+      clientName: inv.clientName,
+      items: inv.items,
+      total: inv.total,
+      status: inv.status,
+    });
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Invoices</h2>
-          <p className="text-sm text-muted-foreground">Manage and track customer invoices</p>
+          <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
+          <p className="text-sm text-muted-foreground">
+            {invoices.filter((i) => i.status === 'Unpaid').length} unpaid ·{' '}
+            {money(invoices.filter((i) => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0))} collected
+          </p>
         </div>
-        <Button onClick={() => router.push('/invoices/new')} className="w-full sm:w-auto">
-          <Plus size={16} className="mr-2" />
-          New Invoice
-        </Button>
+        <Button onClick={startCreate}><Plus size={16} className="mr-2" />New invoice</Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search invoices..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="overdue">Overdue</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-            <SelectItem value="credited">Credited</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Card>
+        <CardHeader><CardTitle>All invoices</CardTitle></CardHeader>
+        <CardContent>
+          {invoices.length === 0 ? (
+            <EmptyState title="No invoices" description="Create an invoice from an accepted quotation." />
+          ) : (
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <Table className="min-w-[720px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Number</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoices.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="font-medium">{inv.number}</TableCell>
+                      <TableCell>{inv.clientName || '—'}</TableCell>
+                      <TableCell className="text-right">{money(inv.total)}</TableCell>
+                      <TableCell><Badge variant={inv.status === 'Paid' ? 'default' : 'secondary'}>{inv.status}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" title="Export PDF" onClick={() => downloadPdf(inv)} aria-label="Export PDF"><Download size={16} /></Button>
+                          {inv.status === 'Unpaid' && (
+                            <Button variant="ghost" size="icon" title="Mark paid" onClick={() => markPaid(inv)} aria-label="Mark paid"><CheckCircle size={16} /></Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => remove(inv.id)} aria-label="Delete invoice"><Trash2 size={16} /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {filtered.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <ResponsiveTable
-              data={paginatedData}
-              keyExtractor={(inv) => inv.id}
-              mobileCardTitle={(inv) => inv.invoice_number}
-              columns={[
-                {
-                  key: 'number',
-                  header: 'Invoice #',
-                  render: (inv) => <span className="text-sm font-medium">{inv.invoice_number}</span>,
-                },
-                {
-                  key: 'description',
-                  header: 'Description',
-                  hideOnMobile: true,
-                  render: (inv) => <span className="text-sm">{inv.description || '—'}</span>,
-                },
-                {
-                  key: 'amount',
-                  header: 'Amount',
-                  render: (inv) => <span className="text-sm font-medium">{fmt.money(inv.amount)}</span>,
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (inv) => (
-                    <Badge variant="secondary" className={statusStyles[inv.status] || ''}>
-                      {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
-                    </Badge>
-                  ),
-                },
-                {
-                  key: 'due',
-                  header: 'Due Date',
-                  hideOnMobile: true,
-                  render: (inv) => <span className="text-sm text-muted-foreground">{inv.due_date ? fmt.date(inv.due_date) : '—'}</span>,
-                },
-                {
-                  key: 'date',
-                  header: 'Date',
-                  hideOnMobile: true,
-                  render: (inv) => <span className="text-sm text-muted-foreground">{fmt.date(inv.created_at)}</span>,
-                },
-                {
-                  key: 'actions',
-                  header: '',
-                  className: 'w-24',
-                  render: (inv) => (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Invoice actions">
-                          <MoreHorizontal size={14} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => router.push(`/invoices/${inv.id}`)}>
-                          <Pencil size={14} className="mr-2" /> Edit
-                        </DropdownMenuItem>
-                        {inv.status !== 'paid' && inv.status !== 'credited' && (
-                          <DropdownMenuItem onClick={() => toast.info('Online payments are handled by recording a payment under Payments')}>
-                            <CreditCard size={14} className="mr-2" /> Record payment
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onClick={async () => {
-                          const id = toast.loading('Generating PDF…');
-                          try {
-                            const pdf = await generateInvoicePdf(workspace?.id || user?.company_id || '', inv, null, null);
-                            await downloadPdf(pdf, `Invoice-${inv.invoice_number}.pdf`);
-                            toast.success('Invoice downloaded', { id });
-                          } catch { toast.error('Failed to generate PDF', { id }); }
-                        }}>
-                          <Download size={14} className="mr-2" /> Download
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={async () => {
-                          const id = toast.loading('Generating preview…');
-                          try {
-                            const pdf = await generateInvoicePdf(workspace?.id || user?.company_id || '', inv, null, null);
-                            const url = await openPdfPreview(pdf);
-                            window.open(url, '_blank');
-                            toast.dismiss(id);
-                          } catch { toast.error('Failed to generate preview', { id }); }
-                        }}>
-                          <Eye size={14} className="mr-2" /> Preview
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(inv)}>
-                          <Trash2 size={14} className="mr-2" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ),
-                },
-              ]}
-            />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-8 sm:py-12 text-center">
-            <Receipt size={48} className="mx-auto text-muted-foreground/50 mb-3" />
-            <p className="text-sm text-muted-foreground">No invoices yet</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <ConfirmDialog
-        open={confirmState.open}
-        onOpenChange={(open) => setConfirmState({ open })}
-        title="Delete Invoice"
-        description="Are you sure you want to delete this invoice? This action cannot be undone."
-        onConfirm={onDeleteConfirm}
-      />
-
-      {filtered.length > PAGE_SIZE && (
-        <DataPagination
-          page={page}
-          totalItems={filtered.length}
-          pageSize={PAGE_SIZE}
-          onPageChange={setPage}
-        />
-      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New invoice from quotation</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label>Accepted quotation *</Label>
+            <Select value={quotationId || 'none'} onValueChange={(v) => setQuotationId(v === 'none' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="Select quotation" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select quotation</SelectItem>
+                {acceptedQuotes.map((q) => (
+                  <SelectItem key={q.id} value={q.id}>{q.number} · {q.clientName} · {money(q.total)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {acceptedQuotes.length === 0 && (
+              <p className="text-xs text-muted-foreground">No accepted quotations yet. Accept one on the Quotations page first.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>{saving ? 'Creating…' : 'Create invoice'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
