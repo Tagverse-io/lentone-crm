@@ -41,6 +41,15 @@ export async function requireOrgMember(orgId: string, uid: string): Promise<stri
   return role;
 }
 
+/** Ensure the verified user owns or admins the org (test routes, billing). */
+export async function requireOwnerOrAdmin(orgId: string, uid: string): Promise<string> {
+  const role = await requireOrgMember(orgId, uid);
+  if (role !== "admin" && role !== "owner") {
+    throw NextResponse.json({ error: "Owner or admin only" }, { status: 403 });
+  }
+  return role;
+}
+
 function isThrownResponse(e: unknown): e is NextResponse {
   return e instanceof NextResponse;
 }
