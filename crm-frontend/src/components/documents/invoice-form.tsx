@@ -38,8 +38,8 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   const [sending, setSending] = useState(false);
 
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingInvoice?.invoice_number || `${settings.branding.invoice_prefix || 'INV'}-${Date.now().toString().slice(-6)}`,
-    status: existingInvoice?.status || 'draft',
+    document_number: existingInvoice?.invoice_number || '',
+    status: existingInvoice?.status || 'pending',
     issue_date: existingInvoice?.issue_date
       ? new Date(existingInvoice.issue_date).toISOString().split('T')[0]
       : existingInvoice?.created_at
@@ -65,7 +65,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
         name: item.name || '',
         description: item.description || '',
         quantity: item.quantity || 1,
-        unit: 'flat',
+        unit: (item as { unit?: string }).unit || 'pcs',
         unit_price: item.unit_price || 0,
         total: item.total || 0,
       }));
@@ -126,6 +126,20 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingInvoice?.id, workspace?.id]);
 
+  // Linked credit notes for this invoice (visible link; managed in Finance).
+  const [linkedCNs, setLinkedCNs] = useState<{ id: string; number: string; status: string; total: number }[]>([]);
+  useEffect(() => {
+    if (!existingInvoice?.id || !workspace?.id) return;
+    let cancelled = false;
+    import('@/lib/backend-crud')
+      .then(({ creditNotesService }) => creditNotesService.list(workspace.id))
+      .then((all) => {
+        if (!cancelled) setLinkedCNs(all.filter((c) => c.invoiceId === existingInvoice.id));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [existingInvoice?.id, workspace?.id]);
+
   /** Due date default from Settings invoice_due_days. */
   function defaultDueDate(): string {
     const days = settings?.branding?.invoice_due_days ?? 30;
@@ -135,26 +149,35 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   }
 
   const handleSave = useCallback(
-    async (status: InvoiceStatus = 'pending') => {
+    async (status?: string) => {
       if (!client.company && !client.contact_person) {
         toast.error('Client name or company is required');
         return;
       }
+      // Header status select is the source of truth; explicit actions override it.
+      const rawStatus = status ?? meta.status;
+      const baseStatus = (rawStatus === 'draft' || rawStatus === 'sent' || rawStatus === 'viewed'
+        ? 'pending'
+        : rawStatus) as InvoiceStatus;
 
-      if (status === 'pending') {
+      if (baseStatus === 'pending') {
         setSaving(true);
       } else {
         setSending(true);
       }
 
       try {
-        let finalStatus = status;
+        let finalStatus = baseStatus;
         if (payment.amount_paid > 0) {
           if (payment.amount_paid >= pricing.grand_total) {
             finalStatus = 'paid';
           } else {
             finalStatus = 'partially_paid';
           }
+        }
+        // Terminal credit states survive re-saves that would otherwise reset to pending.
+        if (finalStatus === 'pending' && (existingInvoice?.status === 'credited' || existingInvoice?.status === 'cancelled')) {
+          finalStatus = existingInvoice.status;
         }
 
         const invoiceData = {
@@ -207,10 +230,10 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
 
         if (existingInvoice) {
           await updateInvoice(existingInvoice.id, invoiceData);
-          toast.success(status === 'pending' ? 'Invoice updated' : 'Invoice sent');
+          toast.success(finalStatus === 'pending' ? 'Invoice updated' : 'Invoice sent');
         } else {
           await createInvoice(invoiceData);
-          toast.success(status === 'pending' ? 'Invoice created' : 'Invoice created and sent');
+          toast.success(finalStatus === 'pending' ? 'Invoice created' : 'Invoice created and sent');
         }
 
         router.push('/invoices');
@@ -221,7 +244,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
         setSending(false);
       }
     },
-    [meta, client, items, pricing, notes, existingInvoice, router]
+    [meta, client, items, pricing, notes, existingInvoice, router, workspace?.id]
   );
 
   return (
@@ -240,11 +263,11 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => handleSave('pending')} disabled={saving || sending}>
+          <Button variant="outline" onClick={() => handleSave()} disabled={saving || sending}>
             <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Draft'}
+            {saving ? 'Saving...' : 'Save'}
           </Button>
-          <Button onClick={() => handleSave('pending')} disabled={saving || sending}>
+          <Button onClick={() => handleSave('sent')} disabled={saving || sending}>
             <Send className="h-4 w-4 mr-2" />
             {sending ? 'Sending...' : 'Send Invoice'}
           </Button>
@@ -276,6 +299,20 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           currency={meta.currency}
         />
         <NotesSection notes={notes} onNotesChange={(n) => setNotes((prev) => ({ ...prev, ...n }))} docType="invoice" />
+        {existingInvoice && linkedCNs.length > 0 && (
+          <div className="rounded-lg border bg-card p-4">
+            <h2 className="text-lg font-semibold">Credit notes</h2>
+            <p className="text-sm text-muted-foreground">Linked credit notes for this invoice (managed in Finance).</p>
+            <ul className="mt-2 space-y-1 text-sm">
+              {linkedCNs.map((cn) => (
+                <li key={cn.id} className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">{cn.number}</span>
+                  <span className="text-muted-foreground">{cn.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

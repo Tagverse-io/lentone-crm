@@ -4,7 +4,7 @@ import { preflight, json, jsonError } from "@/lib/cors";
 import { handle, requireUser, requireOrgMember } from "@/lib/auth";
 import { nextNumber, type NumberKind } from "@/lib/numbering";
 
-const Body = z.object({ orgId: z.string().min(1), kind: z.enum(["invoice", "quote"]) });
+const Body = z.object({ orgId: z.string().min(1), kind: z.enum(["invoice", "quote", "creditNote"]) });
 
 export function OPTIONS(req: NextRequest): Promise<Response> {
   return Promise.resolve(preflight(req));

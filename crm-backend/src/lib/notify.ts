@@ -73,15 +73,17 @@ export async function notify(input: NotifyInput): Promise<{ inApp: boolean; emai
       const s = await getOrgSettings(input.orgId);
       const replyTo = s.branding.email && /.+@.+\..+/.test(s.branding.email) ? s.branding.email : undefined;
       const contact = s.branding.support_contact || s.branding.email || undefined;
+      const orgName = s.general.company_name && s.general.company_name !== "Your Company" ? s.general.company_name : undefined;
       await sendMail({
         to: input.email,
-        subject: `[${process.env.MAIL_FROM_NAME ?? "CRM"}] ${input.title}`,
+        subject: `[${orgName ?? process.env.MAIL_FROM_NAME ?? "CRM"}] ${input.title}`,
         html: brandedEmail(input.title, `<p>${input.body}</p>`, input.link, {
-          name: s.general.company_name !== "Your Company" ? s.general.company_name : undefined,
+          name: orgName,
           logoUrl: s.branding.logo_url || undefined,
           contact,
         }),
         ...(replyTo ? { replyTo } : {}),
+        ...(orgName ? { fromName: orgName } : {}),
       });
       emailSent = true;
     } catch (e) {

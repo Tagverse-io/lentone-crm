@@ -21,6 +21,8 @@ export interface OrgSettings {
     quote_prefix: string;
     invoice_number_format: string;
     quote_number_format: string;
+    credit_note_prefix: string;
+    credit_note_number_format: string;
     invoice_due_days: number;
     default_payment_terms: string;
     default_terms: string;
@@ -30,6 +32,9 @@ export interface OrgSettings {
     tax_sgst: number;
     tax_igst: number;
     tax_vat: number;
+  };
+  notifications: {
+    test_email: string;
   };
 }
 
@@ -54,6 +59,8 @@ const DEFAULTS: OrgSettings = {
     quote_prefix: "QTE",
     invoice_number_format: "{prefix}-{year}-{num}",
     quote_number_format: "{prefix}-{year}-{num}",
+    credit_note_prefix: "CN",
+    credit_note_number_format: "{prefix}-{year}-{num}",
     invoice_due_days: 30,
     default_payment_terms: "Net 30",
     default_terms: "",
@@ -63,6 +70,9 @@ const DEFAULTS: OrgSettings = {
     tax_sgst: 0,
     tax_igst: 0,
     tax_vat: 0,
+  },
+  notifications: {
+    test_email: "",
   },
 };
 
@@ -75,9 +85,10 @@ function num(v: unknown, fallback: number): number {
 export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
   try {
     const snap = await db().ref(`/orgs/${orgId}/settings`).get();
-    const s = (snap.val() ?? {}) as { general?: Record<string, unknown>; branding?: Record<string, unknown> };
+    const s = (snap.val() ?? {}) as { general?: Record<string, unknown>; branding?: Record<string, unknown>; notifications?: Record<string, unknown> };
     const g = s.general ?? {};
     const b = s.branding ?? {};
+    const n = s.notifications ?? {};
     const str = (v: unknown, fb: string): string => (typeof v === "string" && v ? v : fb);
     return {
       general: {
@@ -100,6 +111,8 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
         quote_prefix: str(b.quote_prefix, DEFAULTS.branding.quote_prefix),
         invoice_number_format: str(b.invoice_number_format, DEFAULTS.branding.invoice_number_format),
         quote_number_format: str(b.quote_number_format, DEFAULTS.branding.quote_number_format),
+        credit_note_prefix: str(b.credit_note_prefix, DEFAULTS.branding.credit_note_prefix),
+        credit_note_number_format: str(b.credit_note_number_format, DEFAULTS.branding.credit_note_number_format),
         invoice_due_days: num(b.invoice_due_days, 30),
         default_payment_terms: str(b.default_payment_terms, DEFAULTS.branding.default_payment_terms),
         default_terms: str(b.default_terms, DEFAULTS.branding.default_terms),
@@ -109,12 +122,15 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
         tax_sgst: num(b.tax_sgst, 0),
         tax_igst: num(b.tax_igst, 0),
         tax_vat: num(b.tax_vat, 0),
-      },
-    };
-  } catch {
-    return DEFAULTS;
+        },
+        notifications: {
+          test_email: typeof n.test_email === "string" ? n.test_email.trim() : "",
+        },
+      };
+    } catch {
+      return DEFAULTS;
+    }
   }
-}
 
 function groupInt(digits: string, currency: string, numberFormat: string): string {
   const d = digits.replace(/\D/g, "") || "0";

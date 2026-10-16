@@ -251,6 +251,7 @@ export const DATE_FORMATS = [
 // Number formats
 export const NUMBER_FORMATS = [
   { label: '1,234.56', value: '1,234.56' },
+  { label: '12,34,567.89 (lakh)', value: '12,34,567.89' },
   { label: '1.234,56', value: '1.234,56' },
   { label: '1 234.56', value: '1 234.56' },
   { label: '1234.56', value: '1234.56' },
@@ -334,6 +335,13 @@ export const INVOICE_PREFIX_PRESETS = [
   { label: 'INV', value: 'INV' },
   { label: 'INV-', value: 'INV-' },
   { label: 'INVOICE', value: 'INVOICE' },
+  { label: 'Custom...', value: 'custom' },
+];
+
+export const CREDIT_NOTE_PREFIX_PRESETS = [
+  { label: 'CN', value: 'CN' },
+  { label: 'CN-', value: 'CN-' },
+  { label: 'CREDIT', value: 'CREDIT' },
   { label: 'Custom...', value: 'custom' },
 ];
 

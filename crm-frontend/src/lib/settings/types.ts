@@ -19,6 +19,7 @@ export interface GeneralSettings {
   first_day_of_week: string;
   financial_year: string;
   units: string[];
+  expense_categories: string[];
 }
 
 // ─── Branding Settings ──────────────────────────────────────────────
@@ -58,8 +59,10 @@ export interface BrandingSettings {
   invoice_prefix: string;
   quote_prefix: string;
   purchase_order_prefix: string;
+  credit_note_prefix: string;
   invoice_number_format: string;
   quote_number_format: string;
+  credit_note_number_format: string;
   invoice_due_days: number;
   default_payment_terms: string;
   date_format: string;
@@ -98,6 +101,7 @@ export interface NotificationSettings {
   payment_alerts: boolean;
   project_alerts: boolean;
   support_alerts: boolean;
+  test_email: string;
 }
 
 // ─── Security Settings ──────────────────────────────────────────────
@@ -175,6 +179,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   first_day_of_week: 'monday',
   financial_year: 'jan-dec',
   units: ['pcs', 'hrs', 'days', 'kg', 'box', 'lot'],
+  expense_categories: ['Rent', 'Salaries', 'Utilities', 'Marketing', 'Travel', 'Software', 'Tax', 'Other'],
 };
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
@@ -207,8 +212,10 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   invoice_prefix: 'INV',
   quote_prefix: 'QTE',
   purchase_order_prefix: 'PO',
+  credit_note_prefix: 'CN',
   invoice_number_format: '{prefix}-{year}-{num}',
   quote_number_format: '{prefix}-{year}-{num}',
+  credit_note_number_format: '{prefix}-{year}-{num}',
   invoice_due_days: 30,
   default_payment_terms: 'Net 30',
   date_format: 'MM/dd/yyyy',
@@ -245,6 +252,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   payment_alerts: true,
   project_alerts: true,
   support_alerts: true,
+  test_email: '',
 };
 
 export const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {

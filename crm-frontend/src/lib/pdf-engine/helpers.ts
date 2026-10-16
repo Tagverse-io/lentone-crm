@@ -115,23 +115,67 @@ export async function getCompanySettings(workspaceId: string): Promise<CompanySe
 export function clearSettingsCache(): void {
 }
 
-export function formatCurrency(amount: number, settings: CompanySettings): string {
-  const symbol = settings.currency_symbol || '$';
-  return `${symbol}${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function groupInteger(intPart: string, numberFormat: string, currency: string): string {
+  const digits = intPart.replace(/\D/g, '') || '0';
+  const lakh = numberFormat.includes('12,34') || currency === 'INR';
+  if (lakh) {
+    const last3 = digits.slice(-3);
+    const rest = digits.slice(0, -3);
+    if (!rest) return last3;
+    return `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',')},${last3}`;
+  }
+  if (numberFormat.includes('1.234,56')) return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  if (numberFormat.includes('1 234')) return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  if (numberFormat === '1234.56') return digits;
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
+
+export function formatCurrency(amount: number, settings: CompanySettings): string {
+  const v = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+  const decimals = typeof settings.currency_decimals === 'number' ? settings.currency_decimals : 2;
+  const neg = v < 0 ? '-' : '';
+  const fixed = Math.abs(v).toFixed(decimals);
+  const [intPart, fracPart] = fixed.split('.');
+  const european = (settings.number_format || '').includes('1.234,56');
+  const decSep = european ? ',' : '.';
+  const num = fracPart !== undefined
+    ? `${groupInteger(intPart, settings.number_format || '1,234.56', settings.default_currency || 'USD')}${decSep}${fracPart}`
+    : groupInteger(intPart, settings.number_format || '1,234.56', settings.default_currency || 'USD');
+  const symbol = settings.currency_symbol || '$';
+  return (settings.currency_position || 'before') === 'after' ? `${neg}${num} ${symbol}` : `${neg}${symbol}${num}`;
+}
+
+function partsInTimezone(d: Date, timezone: string): { y: number; m: number; day: number } {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+    return { y: Number(parts.year), m: Number(parts.month), day: Number(parts.day) };
+  } catch {
+    return { y: d.getFullYear(), m: d.getMonth() + 1, day: d.getDate() };
+  }
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 export function formatDate(dateStr: string, settings: CompanySettings): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
+  const p = partsInTimezone(d, settings.timezone || 'UTC');
   const fmt = settings.date_format || 'MM/dd/yyyy';
-  const map: Record<string, string> = {
-    'MM/dd/yyyy': d.toLocaleDateString('en-US'),
-    'dd/MM/yyyy': d.toLocaleDateString('en-GB'),
-    'yyyy-MM-dd': d.toISOString().split('T')[0],
-    'dd-MM-yyyy': d.toLocaleDateString('en-GB').replace(/\//g, '-'),
-    'MM-dd-yyyy': d.toLocaleDateString('en-US').replace(/\//g, '-'),
-  };
-  return map[fmt] || d.toLocaleDateString('en-US');
+  if (fmt === 'DD/MM/YYYY' || fmt === 'dd/MM/yyyy') return `${pad2(p.day)}/${pad2(p.m)}/${p.y}`;
+  if (fmt === 'YYYY-MM-DD' || fmt === 'yyyy-MM-dd') return `${p.y}-${pad2(p.m)}-${pad2(p.day)}`;
+  if (fmt === 'DD MMM YYYY') {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${pad2(p.day)} ${months[p.m - 1]} ${p.y}`;
+  }
+  if (fmt === 'MMM DD, YYYY') {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[p.m - 1]} ${pad2(p.day)}, ${p.y}`;
+  }
+  if (fmt === 'DD.MM.YYYY') return `${pad2(p.day)}.${pad2(p.m)}.${p.y}`;
+  if (fmt === 'dd-MM-yyyy') return `${pad2(p.day)}-${pad2(p.m)}-${p.y}`;
+  if (fmt === 'MM-dd-yyyy') return `${pad2(p.m)}-${pad2(p.day)}-${p.y}`;
+  return `${pad2(p.m)}/${pad2(p.day)}/${p.y}`;
 }
 
 export function hexToRgb(hex: string): [number, number, number] {

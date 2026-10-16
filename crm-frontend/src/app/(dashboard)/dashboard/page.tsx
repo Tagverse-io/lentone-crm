@@ -258,7 +258,7 @@ export default function DashboardPage() {
                           </div>
                         </td>
                         <td className="py-3 text-muted-foreground hidden lg:table-cell">—</td>
-                        <td className="py-3 text-muted-foreground text-xs">{new Date(lead.created_at).toLocaleDateString()}</td>
+                        <td className="py-3 text-muted-foreground text-xs">{fmt.date(lead.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -318,7 +318,7 @@ export default function DashboardPage() {
                               <span className="text-xs text-muted-foreground">{log.user_name}</span>
                               <span className="text-xs text-muted-foreground">·</span>
                               <span className="text-xs text-muted-foreground">
-                                {new Date(log.created_at).toLocaleDateString()}
+                                {fmt.date(log.created_at)}
                               </span>
                             </div>
                           </div>
@@ -361,7 +361,7 @@ export default function DashboardPage() {
                       <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${priorityColors[priority] || priorityColors.medium}`}>
                         {priority.charAt(0).toUpperCase() + priority.slice(1)}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">{dueDate?.toLocaleDateString() || '—'}</span>
+                      <span className="text-xs text-muted-foreground">{dueDateStr ? fmt.date(dueDateStr) : '—'}</span>
                     </div>
                   </div>
                 );
@@ -395,7 +395,7 @@ export default function DashboardPage() {
                       <span>{(rule.execution_count || 0).toLocaleString()} runs</span>
                     </div>
                     {rule.last_executed_at && (
-                      <span>Last: {new Date(rule.last_executed_at).toLocaleDateString()}</span>
+                      <span>Last: {fmt.date(rule.last_executed_at)}</span>
                     )}
                   </div>
                   <div className={`flex items-center gap-1.5 text-xs ${rule.enabled ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>

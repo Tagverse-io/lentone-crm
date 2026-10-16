@@ -23,13 +23,15 @@ const SendMailSchema = z.object({
   subject: z.string().min(1).max(200),
   html: z.string().min(1).max(100_000),
   replyTo: z.string().email().optional(),
+  fromName: z.string().min(1).max(100).optional(),
 });
 
-export async function sendMail(input: { to: string; subject: string; html: string; replyTo?: string }): Promise<void> {
+export async function sendMail(input: { to: string; subject: string; html: string; replyTo?: string; fromName?: string }): Promise<void> {
   const parsed = SendMailSchema.parse(input);
   const env = getEnv();
+  const fromName = parsed.fromName ?? brand.mailFromName;
   await mailer().sendMail({
-    from: `"${brand.mailFromName}" <${env.GMAIL_USER}>`,
+    from: `"${fromName.replace(/"/g, "")}" <${env.GMAIL_USER}>`,
     to: parsed.to,
     subject: parsed.subject,
     html: parsed.html,

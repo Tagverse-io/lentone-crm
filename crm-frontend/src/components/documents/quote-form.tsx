@@ -37,7 +37,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
   // Form state
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingQuote?.quotation_number || `${settings.branding.quote_prefix || 'QTE'}-${Date.now().toString().slice(-6)}`,
+    document_number: existingQuote?.quotation_number || '',
     status: existingQuote?.status || 'draft',
     issue_date: existingQuote?.created_at
       ? new Date(existingQuote.created_at).toISOString().split('T')[0]
@@ -64,7 +64,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
         name: item.name || item.description || '',
         description: item.name ? (item.description || '') : '',
         quantity: item.quantity,
-        unit: 'pcs',
+        unit: (item as { unit?: string }).unit || 'pcs',
         unit_price: item.unit_price,
         total: item.total,
       }));
@@ -117,13 +117,15 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
   }, [existingQuote?.id, workspace?.id]);
 
   const handleSave = useCallback(
-    async (status: QuotationStatus = 'draft') => {
+    async (status?: QuotationStatus) => {
       if (!client.company && !client.contact_person) {
         toast.error('Client name or company is required');
         return;
       }
+      // Header status select is the source of truth; explicit actions override it.
+      const finalStatus = status ?? (meta.status as QuotationStatus);
 
-      if (status === 'draft') {
+      if (finalStatus === 'draft') {
         setSaving(true);
       } else {
         setSending(true);
@@ -149,7 +151,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           igst_percent: pricing.igst_percent,
           currency: meta.currency,
           valid_until: meta.valid_until ? new Date(meta.valid_until).toISOString() : '',
-          status: status,
+          status: finalStatus,
           description: '',
           notes: notes.notes,
           terms: notes.terms,
@@ -169,10 +171,19 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
         if (existingQuote) {
           await updateQuotation(existingQuote.id, quotationData);
-          toast.success(status === 'draft' ? 'Quote updated' : 'Quote sent');
+          // Event-driven automation: accepted → invoice (idempotent on backend).
+          if (existingQuote.status !== 'accepted' && finalStatus === 'accepted' && workspace?.id) {
+            try {
+              await backend.quotationAccepted(workspace.id, existingQuote.id);
+              toast.success('Invoice created from accepted quote');
+            } catch {
+              toast.error('Quote saved, but invoice automation failed');
+            }
+          }
+          toast.success(finalStatus === 'draft' ? 'Quote updated' : 'Quote sent');
         } else {
           await createQuotation(quotationData);
-          toast.success(status === 'draft' ? 'Quote created' : 'Quote created and sent');
+          toast.success(finalStatus === 'draft' ? 'Quote created' : 'Quote created and sent');
         }
 
         router.push('/quotes');
@@ -183,7 +194,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
         setSending(false);
       }
     },
-    [meta, client, items, pricing, notes, existingQuote, router]
+    [meta, client, items, pricing, notes, existingQuote, router, workspace?.id]
   );
 
   return (
@@ -202,9 +213,9 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => handleSave('draft')} disabled={saving || sending}>
+          <Button variant="outline" onClick={() => handleSave()} disabled={saving || sending}>
             <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Draft'}
+            {saving ? 'Saving...' : 'Save'}
           </Button>
           <Button onClick={() => handleSave('sent')} disabled={saving || sending}>
             <Send className="h-4 w-4 mr-2" />

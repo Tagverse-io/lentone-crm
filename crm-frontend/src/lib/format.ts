@@ -125,13 +125,24 @@ export function formatDateTimeS(iso: string | undefined | null, fs: FormatSettin
   return `${formatDateS(iso, fs)} ${pad(partsInTimezone(d, fs.timezone).hh)}:${pad(partsInTimezone(d, fs.timezone).mm)}`;
 }
 
+/** Normalize a stored financial-year value: accepts codes (jan-dec/apr-mar/jul-jun/custom)
+ * and display labels ("January - December", "April - March", …). Unknown → jan-dec. Read-only. */
+export function normalizeFinancialYearKind(raw: string | undefined | null): 'jan-dec' | 'apr-mar' | 'jul-jun' | 'custom' {
+  const v = (raw ?? '').toLowerCase();
+  if (v.includes('apr')) return 'apr-mar';
+  if (v.includes('jul') || v.includes('jun')) return 'jul-jun';
+  if (v === 'custom') return 'custom';
+  return 'jan-dec';
+}
+
 /** Financial-year window for a reference date. Kinds: jan-dec/apr-mar/jul-jun/custom(Jan). */
 export function getFinancialYearRange(kind: string, refDate: Date = new Date()): { start: Date; end: Date; label: string } {
   const y = refDate.getFullYear();
   const m = refDate.getMonth();
+  const norm = normalizeFinancialYearKind(kind);
   let startMonth = 0;
-  if (kind === 'apr-mar') startMonth = 3;
-  else if (kind === 'jul-jun') startMonth = 6;
+  if (norm === 'apr-mar') startMonth = 3;
+  else if (norm === 'jul-jun') startMonth = 6;
   const startYear = m >= startMonth ? y : y - 1;
   const start = new Date(startYear, startMonth, 1);
   const end = new Date(startYear + 1, startMonth, 0, 23, 59, 59);
