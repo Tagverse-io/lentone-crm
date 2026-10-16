@@ -111,6 +111,7 @@ function PrefixSelect({ value, onValueChange, presets, label }: {
 export default function SettingsPage() {
   const { workspace, user, resetPassword } = useAuth();
   const { refresh: refreshWorkspaceSettings } = useWorkspace();
+  const isPrivileged = user?.role === 'admin' || (workspace as { owner_id?: string })?.owner_id === user?.id;
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -259,6 +260,10 @@ export default function SettingsPage() {
 
   const saveSettings = async () => {
     if (!user?.id) return;
+    if (!isPrivileged) {
+      toast.error('Only owners/admins can change settings');
+      return;
+    }
     setSaveState('saving');
     setSaving(true);
     try {
@@ -587,7 +592,8 @@ export default function SettingsPage() {
         </div>
         <div className="flex items-center gap-2">
           {hasUnsavedChanges && <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Unsaved changes</span>}
-          <Button onClick={saveSettings} disabled={saving} className="w-full sm:w-auto">
+          {!isPrivileged && <span className="text-xs text-muted-foreground">Only owners/admins can change settings</span>}
+          <Button onClick={saveSettings} disabled={saving || !isPrivileged} className="w-full sm:w-auto">
             {saveState === 'saving' && <Loader2 size={16} className="mr-2 animate-spin" />}
             {saveState === 'saved' && <Check size={16} className="mr-2" />}
             {saveState === 'error' && <X size={16} className="mr-2" />}

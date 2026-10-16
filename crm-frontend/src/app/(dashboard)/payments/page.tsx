@@ -31,6 +31,7 @@ import { useFmt } from '@/lib/format';
 export default function PaymentsPage() {
   const PAGE_SIZE = 25;
   const { workspace, user } = useAuth();
+  const isPrivileged = user?.role === 'admin' || (workspace as { owner_id?: string })?.owner_id === user?.id;
   const { currency } = useWorkspace();
   const fmt = useFmt();
   const workspaceId = workspace?.id || '';
@@ -163,7 +164,13 @@ export default function PaymentsPage() {
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.client || !form.amount) return;
+    if (!form.amount) {
+      toast.error('Amount is required');
+      return;
+    }
+    if (!form.client) {
+      toast.info('No customer linked — saving as unallocated (legacy). Link a customer when known.');
+    }
 
     try {
       if (!workspaceId) throw new Error("No workspace found");
@@ -210,6 +217,11 @@ export default function PaymentsPage() {
 
   const confirmDelete = async () => {
     if (!deleting || !workspaceId) return;
+    if (!isPrivileged) {
+      toast.error('Only owners/admins can delete payments');
+      setDeleting(null);
+      return;
+    }
     try {
       await deletePayment(workspaceId, deleting);
       toast.success('Payment deleted successfully');
@@ -524,13 +536,15 @@ export default function PaymentsPage() {
                             <Pencil size={14} className="mr-2" /> Edit
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-red-600"
-                            onClick={() => handleDelete(txn.payment_id)} 
-                            disabled={deleting === txn.payment_id}
-                          >
-                            <Trash size={14} className="mr-2" /> Delete
-                          </DropdownMenuItem>
+                          {isPrivileged ? (
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleDelete(txn.payment_id)}
+                              disabled={deleting === txn.payment_id}
+                            >
+                              <Trash size={14} className="mr-2" /> Delete
+                            </DropdownMenuItem>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                   </td>
@@ -579,10 +593,9 @@ export default function PaymentsPage() {
             <form onSubmit={handleRecordPayment} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Client</label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder="e.g. Arka Systems" 
+                <input
+                  type="text"
+                  placeholder="e.g. Arka Systems"
                   className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-background"
                   value={form.client}
                   onChange={(e) => setForm({...form, client: e.target.value})}
