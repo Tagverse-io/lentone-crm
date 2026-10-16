@@ -94,7 +94,7 @@ export interface Quotation {
   updatedAt: string;
 }
 
-export type InvoiceStatus = "draft" | "sent" | "paid" | "partial" | "overdue" | "cancelled";
+export type InvoiceStatus = "draft" | "sent" | "paid" | "partial" | "overdue" | "cancelled" | "credited";
 
 export interface Invoice {
   id: string;
@@ -126,6 +126,44 @@ export interface Payment {
   date: string;
   notes?: string;
   createdAt: string;
+}
+
+// Finance: operating expenses. No per-expense currency — the Settings
+// currency always applies. Categories come from Settings (general.expense_categories).
+export interface Expense {
+  id: string;
+  date: string;
+  category: string;
+  vendor?: string;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Finance: credit notes against invoices. Tax summary counts issued notes
+// (invoices minus credit notes); applying reduces the invoice amount_due.
+export type CreditNoteStatus = "issued" | "applied" | "cancelled";
+
+export interface CreditNote {
+  id: string;
+  number: string;
+  invoiceId: string;
+  invoiceNumber?: string;
+  clientId?: string;
+  amount: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  vat?: number;
+  taxAmount: number;
+  total: number;
+  reason?: string;
+  status: CreditNoteStatus;
+  date: string;
+  appliedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type ProjectStatus = "not_started" | "in_progress" | "on_hold" | "completed" | "cancelled";

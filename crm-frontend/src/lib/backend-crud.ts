@@ -10,7 +10,7 @@ import { backendFetch } from "./backend-client";
 import { cleanData, nowIso } from "./utils";
 import type {
   Lead, Client, Contact, FollowUp, Quotation, Invoice, Payment,
-  Project, Task, SocialAccount, Post, VideoProduction, CrmEvent,
+  Project, Task, SocialAccount, Post, VideoProduction, CrmEvent, Expense, CreditNote,
 } from "./types";
 
 export interface CrudService<T extends { id: string; createdAt: string }> {
@@ -87,3 +87,5 @@ export const socialAccountsService = createClient<SocialAccount>("socialAccounts
 export const postsService = createClient<Post>("posts");
 export const videosService = createClient<VideoProduction>("videoProductions");
 export const eventsService = createClient<CrmEvent>("events");
+export const expensesService = createClient<Expense>("expenses");
+export const creditNotesService = createClient<CreditNote>("creditNotes");
