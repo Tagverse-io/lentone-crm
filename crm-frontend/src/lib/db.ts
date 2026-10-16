@@ -233,6 +233,9 @@ export interface Quotation {
   discount: number;
   total: number;
   status: QuotationStatus;
+  issueDate?: string; // YYYY-MM-DD
+  validUntil?: string; // YYYY-MM-DD
+  notes?: string;
   orderId?: string;
   invoiceId?: string;
   legacy?: boolean;
@@ -258,7 +261,9 @@ export interface Invoice {
   discount: number;
   total: number;
   amountPaid: number;
+  issueDate?: string; // YYYY-MM-DD
   dueDate?: string; // YYYY-MM-DD
+  notes?: string;
   status: InvoiceStatus;
   createdAt: string;
   updatedAt: string;

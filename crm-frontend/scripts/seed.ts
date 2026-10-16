@@ -221,6 +221,9 @@ async function main(): Promise<void> {
       clientId: c.id, clientName: c.name, clientKey: key(c.name),
       items: lines, subtotal, tax, discount, total,
       status: quoteStatuses[i % quoteStatuses.length],
+      issueDate: created.slice(0, 10),
+      validUntil: iso(35 - i - 30, 10).slice(0, 10),
+      notes: i % 3 === 0 ? "Payment within 15 days of acceptance. Delivery within a week." : undefined,
       orderId, invoiceId: invId, createdAt: created, updatedAt: created,
     });
     await done(`orders/${orderId}`, {
@@ -239,7 +242,9 @@ async function main(): Promise<void> {
       quotationId: quoteId, orderId,
       items: lines, subtotal, tax, discount, total,
       amountPaid,
+      issueDate: created.slice(0, 10),
       dueDate: iso(35 - i - 25, 10).slice(0, 10),
+      notes: i % 4 === 0 ? "Please pay by the due date to avoid interruption." : undefined,
       status: invStatus,
       createdAt: created, updatedAt: created,
       ...(invStatus === "Paid" ? { paidAt: created } : {}),

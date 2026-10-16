@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,7 @@ import {
   fmtMoney,
   formatNumber,
   getCollection,
+  getItem,
   logHistory,
   nameKeyOf,
   nextSequence,
@@ -53,6 +55,13 @@ export default function QuotesPage() {
   const [items, setItems] = useState<OrderLineItem[]>([{ ...EMPTY_ITEM }]);
   const [discount, setDiscount] = useState('0');
   const [status, setStatus] = useState<QuotationStatus>('Draft');
+  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [validUntil, setValidUntil] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
   const [preview, setPreview] = useState<Quotation | null>(null);
@@ -67,6 +76,13 @@ export default function QuotesPage() {
     getCollection<Product>('products').then(setProducts).catch(() => undefined);
   };
 
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const plus30 = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  };
+
   const startCreate = () => {
     loadClients();
     setEditing(null);
@@ -74,6 +90,9 @@ export default function QuotesPage() {
     setItems([{ ...EMPTY_ITEM }]);
     setDiscount('0');
     setStatus('Draft');
+    setIssueDate(todayStr());
+    setValidUntil(plus30());
+    setNotes('');
     setOpen(true);
   };
   const startEdit = (q: Quotation) => {
@@ -83,6 +102,9 @@ export default function QuotesPage() {
     setItems(q.items.length > 0 ? q.items.map((i) => ({ ...i })) : [{ ...EMPTY_ITEM }]);
     setDiscount(String(q.discount ?? 0));
     setStatus(q.status);
+    setIssueDate(q.issueDate ?? q.createdAt.slice(0, 10));
+    setValidUntil(q.validUntil ?? plus30());
+    setNotes(q.notes ?? '');
     setOpen(true);
   };
 
@@ -110,6 +132,9 @@ export default function QuotesPage() {
         discount: t.discount,
         total: t.total,
         status,
+        issueDate: issueDate || undefined,
+        validUntil: validUntil || undefined,
+        notes: notes.trim() || undefined,
       };
       if (editing) {
         await updateItem('quotations', editing.id, data);
@@ -163,18 +188,36 @@ export default function QuotesPage() {
     }
   };
 
-  const downloadPdf = (q: Quotation) => {
-    exportDocumentPdf({
-      title: 'Quotation',
-      number: q.number,
-      clientName: q.clientName,
-      items: q.items,
-      subtotal: q.subtotal,
-      tax: q.tax,
-      discount: q.discount,
-      total: q.total,
-      status: q.status,
-    });
+  const billToFor = async (q: Quotation) => {
+    const c = clients.find((x) => x.id === q.clientId) ?? (await getItem<Client>('clients', q.clientId).catch(() => null));
+    return {
+      name: q.clientName || c?.name,
+      address: c?.address,
+      email: c?.email,
+      phone: c?.phone,
+    };
+  };
+
+  const downloadPdf = async (q: Quotation) => {
+    try {
+      await exportDocumentPdf({
+        kind: 'QUOTATION',
+        number: q.number,
+        issueDate: q.issueDate ?? q.createdAt.slice(0, 10),
+        validUntil: q.validUntil,
+        company: { name: settings?.companyName ?? 'Company', sub: settings?.address, logoUrl: settings?.logo },
+        billTo: await billToFor(q),
+        items: q.items,
+        subtotal: q.subtotal,
+        tax: q.tax,
+        discount: q.discount,
+        total: q.total,
+        notes: q.notes,
+        currency,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'PDF export failed');
+    }
   };
 
   const openPreview = async (q: Quotation) => {
@@ -270,7 +313,34 @@ export default function QuotesPage() {
                 </Select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Date *</Label>
+                <Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Valid Until</Label>
+                <Input type="date" value={validUntil} min={issueDate} onChange={(e) => setValidUntil(e.target.value)} />
+              </div>
+            </div>
+            {clientId && (() => {
+              const c = clients.find((x) => x.id === clientId);
+              if (!c) return null;
+              return (
+                <div className="rounded-lg border bg-muted/40 p-3 text-sm space-y-0.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bill to</p>
+                  <p className="font-medium">{c.name}</p>
+                  {c.address && <p className="text-muted-foreground">{c.address}</p>}
+                  {c.email && <p className="text-muted-foreground">Email: {c.email}</p>}
+                  {c.phone && <p className="text-muted-foreground">{c.phone}</p>}
+                </div>
+              );
+            })()}
             <LineItemsEditor items={items} onChange={setItems} products={products} currency={currency} showStock={false} />
+            <div className="grid gap-1.5">
+              <Label>Notes</Label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Payment terms, delivery notes…" />
+            </div>
             <div className="grid grid-cols-3 gap-3 text-sm">
               <div className="grid gap-1.5">
                 <Label>Discount (₹)</Label>
@@ -305,7 +375,9 @@ export default function QuotesPage() {
                   content: (
                     <div className="grid sm:grid-cols-2 gap-2 text-sm">
                       <div><span className="text-muted-foreground">Client: </span>{preview.clientName || '—'}</div>
-                      <div><span className="text-muted-foreground">Created: </span>{preview.createdAt.slice(0, 10)}</div>
+                      <div><span className="text-muted-foreground">Date: </span>{preview.issueDate ?? preview.createdAt.slice(0, 10)}</div>
+                      <div><span className="text-muted-foreground">Valid Until: </span>{preview.validUntil || '—'}</div>
+                      <div><span className="text-muted-foreground">Status: </span>{preview.status}</div>
                       <div><span className="text-muted-foreground">Subtotal: </span>{fmtMoney(preview.subtotal, currency)}</div>
                       <div><span className="text-muted-foreground">Discount: </span>{fmtMoney(preview.discount, currency)}</div>
                       <div><span className="text-muted-foreground">Tax: </span>{fmtMoney(preview.tax, currency)}</div>
@@ -316,6 +388,7 @@ export default function QuotesPage() {
                       </div>
                       <div><span className="text-muted-foreground">Order: </span>{preview.orderId ? preview.orderId.slice(-6) : '—'}</div>
                       <div><span className="text-muted-foreground">Invoice: </span>{preview.invoiceId ? preview.invoiceId.slice(-6) : '—'}</div>
+                      {preview.notes && <div className="sm:col-span-2"><span className="text-muted-foreground">Notes: </span>{preview.notes}</div>}
                     </div>
                   ),
                 },
