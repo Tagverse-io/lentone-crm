@@ -221,7 +221,24 @@ export function DataTable<T extends { id: string; legacy?: boolean }>({
         </div>
 
         {error ? (
-          <ErrorState message={error.message} onRetry={() => mutate()} />
+          /index/i.test(error.message) ? (
+            <div className="text-center py-8 space-y-2">
+              <p className="font-medium text-destructive">Database indexes missing</p>
+              <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                Firebase rejected this query. Deploy the rules once: copy <code>database.rules.json</code> into
+                Firebase Console → Realtime Database → Rules → Publish
+                (or run <code>firebase deploy --only database</code>), then press Retry.
+              </p>
+              <p className="text-xs text-muted-foreground">{error.message}</p>
+              <div>
+                <Button variant="outline" size="sm" onClick={() => mutate()}>
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <ErrorState message={error.message} onRetry={() => mutate()} />
+          )
         ) : isLoading && !data ? (
           <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
         ) : !data || data.rows.length === 0 ? (
