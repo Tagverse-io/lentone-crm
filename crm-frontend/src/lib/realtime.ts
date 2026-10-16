@@ -1,148 +1,79 @@
 "use client";
 
-import { onValue, type Unsubscribe } from "firebase/database";
-import { ref } from "firebase/database";
-import { getFirebaseDatabase } from "./firebase";
-import type { Delivery, FieldTask } from "./db";
+import useSWR, { type SWRConfiguration } from "swr";
+import { getCollection, getSettings, type AppSettings, type Delivery, type FieldTask } from "./db";
 
-// Realtime transport abstraction. The web UI uses Firebase Realtime
-// Database listeners (WebSockets) for live updates; the Expo app uses the
-// HTTPS webhook (POST /api/app/events) plus an SSE stream
-// (GET /api/app/stream) with polling fallback. Swap `realtime` for an
-// Ably/Pusher implementation later without touching UI code.
+// Polling-only realtime transport (Vercel serverless has no persistent
+// WebSockets; no onValue listeners, no SSE/EventSource anywhere in the UI).
+// Swap `transport` for an Ably/Pusher implementation later without touching UI.
+//
+// Intervals: hot lists (Dashboard, Field Force, Delivery, Tasks) poll every
+// 15s; everything else every 60s. Polling pauses when the tab is hidden
+// (refreshWhenHidden: false) and every view has a manual refresh button.
+
+export const POLL_FAST_MS = 15_000;
+export const POLL_SLOW_MS = 60_000;
+/** Expo app poll cadence for GET /api/app/tasks?workerId=. */
+export const POLL_APP_MS = 30_000;
 
 export interface WorkerFeed {
   tasks: FieldTask[];
   deliveries: Delivery[];
 }
 
-export interface RealtimeTransport {
-  /** Live worker task feed (Firebase onValue under the hood). */
-  subscribeWorkerFeed(workerId: string, cb: (feed: WorkerFeed) => void): Unsubscribe;
-  /** Live delivery list for the Delivery page. */
-  subscribeDeliveries(cb: (deliveries: Delivery[]) => void): Unsubscribe;
-  /** Live latest-location list for the Field Force page. */
-  subscribeLatestLocations(
-    cb: (rows: { workerId: string; mapsUrl: string; timestamp: string; workerName?: string }[]) => void,
-  ): Unsubscribe;
+export interface PollingTransport {
+  /** One-shot fetch of a worker's open tasks + deliveries. */
+  fetchWorkerFeed(workerId: string): Promise<WorkerFeed>;
+  /** SWR-backed polling hook. Pauses when the tab is hidden. */
+  usePolling<T>(key: string | null, fetcher: () => Promise<T>, intervalMs: number): PollingState<T>;
+  /** App settings with slow polling. */
+  useSettings(): PollingState<AppSettings>;
 }
 
-function toList<T>(val: unknown): (T & { id: string })[] {
-  if (!val || typeof val !== "object") return [];
-  return Object.entries(val as Record<string, unknown>)
-    .filter(([, v]) => v && typeof v === "object")
-    .map(([id, v]) => ({ id, ...(v as object) }) as T & { id: string });
+export interface PollingState<T> {
+  data: T | undefined;
+  error: Error | undefined;
+  isLoading: boolean;
+  refresh: () => Promise<T | undefined>;
 }
 
-export const firebaseTransport: RealtimeTransport = {
-  subscribeWorkerFeed(workerId, cb) {
-    const db = getFirebaseDatabase();
-    const tasksRef = ref(db, "tasks");
-    const deliveriesRef = ref(db, "deliveries");
-    let tasks: FieldTask[] = [];
-    let deliveries: Delivery[] = [];
-    const emit = () =>
-      cb({
-        tasks: tasks.filter((t) => t.workerId === workerId && t.status !== "Done"),
-        deliveries: deliveries.filter((d) => d.workerId === workerId && d.status !== "Delivered"),
-      });
-    const offTasks = onValue(tasksRef, (s) => {
-      tasks = toList<FieldTask>(s.val());
-      emit();
-    });
-    const offDeliveries = onValue(deliveriesRef, (s) => {
-      deliveries = toList<Delivery>(s.val());
-      emit();
-    });
-    return () => {
-      offTasks();
-      offDeliveries();
-    };
-  },
-
-  subscribeDeliveries(cb) {
-    const db = getFirebaseDatabase();
-    return onValue(ref(db, "deliveries"), (s) => cb(toList<Delivery>(s.val())));
-  },
-
-  subscribeLatestLocations(cb) {
-    const db = getFirebaseDatabase();
-    return onValue(ref(db, "locations"), (s) => {
-      const val = s.val() as Record<string, { latest?: { mapsUrl: string; timestamp: string; workerName?: string } }> | null;
-      if (!val) return cb([]);
-      cb(
-        Object.entries(val)
-          .filter(([, v]) => v?.latest)
-          .map(([workerId, v]) => ({ workerId, ...(v.latest as { mapsUrl: string; timestamp: string; workerName?: string }) })),
-      );
-    });
-  },
-};
-
-/** Default transport (Firebase). Replace with Ably/Pusher later. */
-export const realtime: RealtimeTransport = firebaseTransport;
-
-// ----- Expo client helpers: SSE stream with 30s polling fallback -----
-
-export interface StreamEvent {
-  type: "tasks" | "deliveries" | "ping";
-  at: string;
-}
-
-/**
- * Subscribe to GET /api/app/stream?workerId= via Server-Sent Events.
- * Auto-reconnects (native EventSource retry) and falls back to polling
- * GET /api/app/tasks?workerId= every 30s when SSE is unavailable.
- * Returns an unsubscribe function.
- */
-export function subscribeWorkerStream(
-  workerId: string,
-  onFeed: (feed: WorkerFeed) => void,
-  opts?: { pollMs?: number },
-): () => void {
-  const pollMs = opts?.pollMs ?? 30_000;
-  let stopped = false;
-  let es: EventSource | null = null;
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-  const poll = async () => {
-    if (stopped) return;
-    try {
-      const res = await fetch(`/api/app/tasks?workerId=${encodeURIComponent(workerId)}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const feed = (await res.json()) as WorkerFeed;
-      onFeed(feed);
-    } catch {
-      // Offline — next poll retries.
-    }
-  };
-
-  try {
-    es = new EventSource(`/api/app/stream?workerId=${encodeURIComponent(workerId)}`);
-    es.onmessage = () => {
-      void poll(); // stream pinged: refresh the feed
-    };
-    es.onerror = () => {
-      // SSE dropped: rely on polling until the browser reconnects.
-      if (!pollTimer) pollTimer = setInterval(poll, pollMs);
-    };
-    es.onopen = () => {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
-      void poll();
-    };
-  } catch {
-    pollTimer = setInterval(poll, pollMs);
-  }
-  // Always poll in the background so a silent SSE break still self-heals.
-  if (!pollTimer) pollTimer = setInterval(poll, pollMs);
-  void poll();
-
-  return () => {
-    stopped = true;
-    es?.close();
-    if (pollTimer) clearInterval(pollTimer);
+async function fetchWorkerFeed(workerId: string): Promise<WorkerFeed> {
+  const [tasks, deliveries] = await Promise.all([
+    getCollection<FieldTask>("tasks"),
+    getCollection<Delivery>("deliveries"),
+  ]);
+  return {
+    tasks: tasks.filter((t) => t.workerId === workerId && t.status !== "Done"),
+    deliveries: deliveries.filter((d) => d.workerId === workerId && d.status !== "Delivered"),
   };
 }
+
+function usePolling<T>(key: string | null, fetcher: () => Promise<T>, intervalMs: number): PollingState<T> {
+  const cfg: SWRConfiguration = {
+    refreshInterval: intervalMs,
+    revalidateOnFocus: true,
+    refreshWhenHidden: false,
+    dedupingInterval: Math.min(intervalMs, 5_000),
+    keepPreviousData: true,
+  };
+  const { data, error, isLoading, mutate } = useSWR<T, Error>(key, fetcher, cfg);
+  return {
+    data,
+    error: error as Error | undefined,
+    isLoading,
+    refresh: () => mutate(),
+  };
+}
+
+function useSettings(): PollingState<AppSettings> {
+  return usePolling<AppSettings>("settings", getSettings, POLL_SLOW_MS);
+}
+
+/** Default transport (polling). Replace with Ably/Pusher later. */
+export const transport: PollingTransport = { fetchWorkerFeed, usePolling, useSettings };
+
+/** Backwards-compatible named exports used across pages. */
+export const realtime = transport;
+export const usePollingQuery = usePolling;
+export const useAppSettings = useSettings;
+export { fetchWorkerFeed, usePolling, useSettings };

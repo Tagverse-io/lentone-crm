@@ -13,10 +13,15 @@ export function exportDocumentPdf(opts: {
   number: string;
   clientName?: string;
   items: PdfLineItem[];
+  subtotal?: number;
+  tax?: number;
+  discount?: number;
   total: number;
   status: string;
+  extraLines?: string[];
 }): void {
   const doc = new jsPDF();
+  const money = (n: number) => `${n.toLocaleString('en-IN')}`;
   let y = 20;
   doc.setFontSize(18);
   doc.text(opts.title, 14, y);
@@ -27,7 +32,12 @@ export function exportDocumentPdf(opts: {
   doc.text(`Client: ${opts.clientName || '—'}`, 14, y);
   y += 7;
   doc.text(`Status: ${opts.status}`, 14, y);
-  y += 10;
+  y += 7;
+  for (const line of opts.extraLines ?? []) {
+    doc.text(line.slice(0, 90), 14, y);
+    y += 7;
+  }
+  y += 3;
 
   doc.setFontSize(11);
   doc.text('Description', 14, y);
@@ -39,7 +49,7 @@ export function exportDocumentPdf(opts: {
   y += 6;
 
   for (const item of opts.items) {
-    if (y > 270) {
+    if (y > 260) {
       doc.addPage();
       y = 20;
     }
@@ -52,7 +62,20 @@ export function exportDocumentPdf(opts: {
     y += 7;
   }
   y += 4;
+  doc.setFontSize(11);
+  if (opts.subtotal !== undefined) {
+    doc.text(`Subtotal: ${money(opts.subtotal)}`, 14, y);
+    y += 7;
+  }
+  if (opts.discount) {
+    doc.text(`Discount: ${money(opts.discount)}`, 14, y);
+    y += 7;
+  }
+  if (opts.tax) {
+    doc.text(`Tax: ${money(opts.tax)}`, 14, y);
+    y += 7;
+  }
   doc.setFontSize(12);
-  doc.text(`Total: ${opts.total}`, 14, y);
+  doc.text(`Total: ${money(opts.total)}`, 14, y);
   doc.save(`${opts.number}.pdf`);
 }
