@@ -1,6 +1,7 @@
 # Expo App API Contract
 
-Base URL (production): `https://<your-vercel-app>.vercel.app`
+Base URL (production): `https://crm.lentone.in`
+Fallback: `https://lentone-crm.vercel.app`
 Local: `http://localhost:3000`
 
 All `/api/app/*` routes require:
