@@ -117,7 +117,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
   useEffect(() => {
     if (existingQuote || !workspace?.id) return;
     backend.nextNumber(workspace.id, 'quote')
-      .then(({ number }) => setMeta((prev) => ({ ...prev, document_number: number })))
+      .then(({ number }: { number: string }) => setMeta((prev) => ({ ...prev, document_number: number })))
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingQuote?.id, workspace?.id]);

@@ -127,7 +127,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   useEffect(() => {
     if (existingInvoice || !workspace?.id) return;
     backend.nextNumber(workspace.id, 'invoice')
-      .then(({ number }) => setMeta((prev) => ({ ...prev, document_number: number })))
+      .then(({ number }: { number: string }) => setMeta((prev) => ({ ...prev, document_number: number })))
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingInvoice?.id, workspace?.id]);
