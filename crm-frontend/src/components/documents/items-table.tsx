@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +10,8 @@ import type { DocumentItem } from './types';
 import { calculateItemTotal, formatDocumentCurrency } from './types';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useFmt } from '@/lib/format';
+import { getCollection } from '@/lib/db';
+import type { Product } from '@/lib/db';
 
 interface ItemsTableProps {
   items: DocumentItem[];
@@ -37,6 +40,17 @@ export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTable
   const unitOptions = units ?? settings?.general?.units ?? FALLBACK_UNITS.map((u) => u.value);
   const fmt = useFmt();
   const options = unitOptions.map((u) => ({ value: u, label: u }));
+
+  // Inventory products for the "pick from inventory" select.
+  const [products, setProducts] = useState<Product[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getCollection<Product>('products')
+      .then((list) => { if (alive) setProducts(list); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
   const addItem = () => {
     onItemsChange([
       ...items,
@@ -50,6 +64,34 @@ export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTable
         total: 0,
       },
     ]);
+  };
+
+  /** Fill the row from an inventory product; "custom" clears the link (manual entry). */
+  const pickProduct = (id: string, productId: string) => {
+    if (productId === 'custom') {
+      onItemsChange(
+        items.map((item) =>
+          item.id === id ? { ...item, product_id: undefined, name: '', unit_price: 0 } : item
+        )
+      );
+      return;
+    }
+    const p = products.find((x) => x.id === productId);
+    if (!p) return;
+    onItemsChange(
+      items.map((item) => {
+        if (item.id !== id) return item;
+        const updated: DocumentItem = {
+          ...item,
+          product_id: p.id,
+          name: p.name,
+          unit_price: p.price,
+          unit: unitOptions.includes(p.unit) ? p.unit : item.unit,
+        };
+        updated.total = calculateItemTotal(updated);
+        return updated;
+      })
+    );
   };
 
   const removeItem = (id: string) => {
@@ -94,6 +136,27 @@ export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTable
             </div>
 
             <div className="flex-1 grid grid-cols-12 gap-2">
+              <div className="col-span-6 space-y-1">
+                {index === 0 && <Label className="text-xs">Product (from inventory)</Label>}
+                <Select
+                  value={item.product_id ?? 'custom'}
+                  onValueChange={(v) => pickProduct(item.id, v)}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Pick product or enter manually below" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">Custom item (manual)…</SelectItem>
+                    {products.map((prod) => (
+                      <SelectItem key={prod.id} value={prod.id}>
+                        {prod.name} · {formatDocumentCurrency(prod.price, currency, fmt.fs)}
+                        {typeof prod.stock === 'number' ? ` · stock ${prod.stock}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-6" />
               <div className="col-span-3 space-y-1">
                 {index === 0 && <Label className="text-xs">Name *</Label>}
                 <Input

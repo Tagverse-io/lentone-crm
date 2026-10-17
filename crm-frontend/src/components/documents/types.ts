@@ -9,6 +9,8 @@ export type DocumentTemplate = 'modern' | 'corporate' | 'minimal' | 'creative';
 
 export interface DocumentItem {
   id: string;
+  /** Inventory product this line was picked from; undefined for manual/custom lines. */
+  product_id?: string;
   name: string;
   description: string;
   quantity: number;

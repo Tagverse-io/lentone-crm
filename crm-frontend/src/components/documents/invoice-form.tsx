@@ -71,6 +71,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
     if (existingInvoice?.items && existingInvoice.items.length > 0) {
       return existingInvoice.items.map((item: any) => ({
         id: item.item_id || item.id || crypto.randomUUID(),
+        product_id: item.product_id || undefined,
         name: item.name || item.description || '',
         description: item.name ? (item.description || '') : '',
         quantity: item.quantity || 1,
@@ -251,6 +252,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           workspace_id: workspace?.id || '',
           items: items.map((item) => ({
             item_id: item.id,
+            product_id: item.product_id,
             name: item.name,
             description: item.name ? (item.description ? `${item.name} - ${item.description}` : item.name) : item.description || '',
             quantity: item.quantity,
