@@ -88,16 +88,12 @@ The Expo app sends **app-friendly statuses**, which the server maps onto the CRM
   "deliveryId": "delivery-123",
   "status": "Delivered",
   "mapsUrl": "https://www.google.com/maps?q=9.9816,76.2999",
-  "proofBase64": "<data:image/jpeg;base64,...>",
   "timestamp": "2026-10-16T14:00:00.000Z"
 }
 ```
 
-- `status` is one of `Pending | Out for Delivery | Delivered`.
-- The app MUST compress the photo to **at most 800px wide, JPEG quality 0.5** (≈100–200 KB) before base64-encoding.
-- The webhook **rejects anything over 500 KB** (`413`).
-- The base64 is stored **only** at `/deliveryProofs/{deliveryId}` (`{ proofBase64, updatedAt }`) — never under a listed path. The web UI loads it only when the thumbnail is clicked.
-- On `Delivered`, the webhook also records a history entry and cascades: linked task → `Done`, linked order → `Delivered` (each with its own history entry) — the same cascade the web “Mark delivered” button runs.
+- `status` is one of `Pending | Out for Delivery | Delivered`. No delivery proof photo is required from the app (the server still tolerates an optional `proofBase64` if ever sent, rejecting anything over 500 KB, stored only at `/deliveryProofs/{deliveryId}`).
+- On `Delivered`, the webhook records a history entry and cascades: linked task → `Done`, linked order → `Delivered` (each with its own history entry) — the same cascade the web “Mark delivered” button runs.
 
 ## GET /api/app/worker?phone={number}
 
@@ -128,5 +124,5 @@ Tasks created by **Assign Work** carry `scheduledAt`, `mapsUrl`, and links (`ord
 
 - Background location sends `location` events with the Google Maps URL; login/logout events on app open/close.
 - Task list reads `GET /api/app/tasks?workerId=` every 30 seconds.
-- Proof photo screen: compress → base64 → `delivery_update` event (photo is optional — a Delivered event without `proofBase64` is valid).
+- Delivery proof photos: **not used by the app** — no camera capture screen; `Delivered` is sent without a photo.
 - "Open in Google Maps" button uses `Linking.openURL(mapsUrl)` only. No map SDK.
