@@ -20,12 +20,33 @@ const EventSchema = z.object({
   timestamp: z.string().min(1, "timestamp is missing"),
   taskId: z.string().optional(),
   status: z.string().optional(),
+  denyReason: z.string().optional(),
   deliveryId: z.string().optional(),
   proofBase64: z.string().optional(),
 });
 
 const TASK_STATUSES = ["Assigned", "In Progress", "Done"];
 const DELIVERY_STATUSES = ["Pending", "Out for Delivery", "Delivered"];
+
+/**
+ * App-side task actions from the Expo app. The CRM database keeps its three
+ * canonical statuses (Assigned | In Progress | Done); accept/deny are recorded
+ * as fields on the task so the poll endpoint can derive the worker's view, and
+ * the admin sees the decision in the task history.
+ */
+function normalizeTaskUpdate(status: string | undefined): { action: "accept" | "deny" | "start" | "complete"; crmStatus?: string } | null {
+  if (!status) return null;
+  const s = status.trim().toLowerCase();
+  if (s === "accepted") return { action: "accept" };
+  if (s === "denied") return { action: "deny" };
+  if (s === "in_progress" || s === "started") return { action: "start", crmStatus: "In Progress" };
+  if (s === "completed" || s === "done" || s === "Done") return { action: "complete", crmStatus: "Done" };
+  // Server-canonical forms (case-sensitive) also accepted.
+  if (status === "In Progress") return { action: "start", crmStatus: "In Progress" };
+  if (status === "Done") return { action: "complete", crmStatus: "Done" };
+  if (status === "Assigned") return { action: "accept" };
+  return null;
+}
 
 function unauthorized(req: NextRequest): boolean {
   let expected = "";
@@ -120,8 +141,18 @@ export async function POST(req: NextRequest) {
 
       case "task_update": {
         if (!e.taskId) return NextResponse.json({ error: "taskId is missing" }, { status: 400 });
-        if (!e.status || !TASK_STATUSES.includes(e.status)) {
-          return NextResponse.json({ error: `status: must be one of ${TASK_STATUSES.join(", ")}` }, { status: 400 });
+        if (!e.status) return NextResponse.json({ error: "status is missing" }, { status: 400 });
+        const { action, crmStatus } = normalizeTaskUpdate(e.status) ?? {
+          action: null as never,
+        };
+        if (!action) {
+          return NextResponse.json(
+            { error: "status: must be one of accepted, denied, in_progress, completed (or Assigned, In Progress, Done)" },
+            { status: 400 },
+          );
+        }
+        if (action === "deny" && !e.denyReason) {
+          return NextResponse.json({ error: "denyReason is required when denying a task" }, { status: 400 });
         }
         const taskSnap = await db.ref(`tasks/${e.taskId}`).get();
         if (!taskSnap.exists()) return NextResponse.json({ error: "Task not found" }, { status: 404 });
@@ -129,8 +160,37 @@ export async function POST(req: NextRequest) {
         if (task.workerId && task.workerId !== e.workerId) {
           return NextResponse.json({ error: "Task is not assigned to this worker" }, { status: 403 });
         }
-        await db.ref(`tasks/${e.taskId}`).update({ status: e.status, updatedAt: stamp });
-        await hist("tasks", e.taskId, `Status → ${e.status}`, `via Expo app (${by})`);
+        switch (action) {
+          case "accept": {
+            await db.ref(`tasks/${e.taskId}`).update({
+              acceptedAt: stamp,
+              denyReason: null,
+              deniedAt: null,
+              updatedAt: stamp,
+            });
+            await hist("tasks", e.taskId, "Task accepted", `via Expo app (${by})`);
+            break;
+          }
+          case "deny": {
+            await db.ref(`tasks/${e.taskId}`).update({
+              denyReason: e.denyReason ?? null,
+              deniedAt: stamp,
+              updatedAt: stamp,
+            });
+            await hist("tasks", e.taskId, "Task denied", `${e.denyReason} (via Expo app, ${by})`);
+            break;
+          }
+          case "start":
+          case "complete": {
+            if (crmStatus) {
+              const patch: Record<string, unknown> = { status: crmStatus, updatedAt: stamp };
+              if (action === "start") patch.startedAt = stamp;
+              await db.ref(`tasks/${e.taskId}`).update(patch);
+            }
+            await hist("tasks", e.taskId, `Status → ${crmStatus}`, `via Expo app (${by})`);
+            break;
+          }
+        }
         return NextResponse.json({ ok: true });
       }
 
