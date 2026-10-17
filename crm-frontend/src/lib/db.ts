@@ -333,6 +333,8 @@ export interface CustomFieldDef {
 
 export type CustomFieldEntity = "clients" | "leads" | "products";
 
+export type PdfTemplateStyle = 'modern' | 'corporate' | 'minimal';
+
 export interface AppSettings {
   companyName: string;
   logo?: string;
@@ -350,6 +352,18 @@ export interface AppSettings {
   workingHoursEnd: string; // "HH:MM"
   clientCategories: string[];
   customFields: Record<CustomFieldEntity, CustomFieldDef[]>;
+  // PDF / Document branding
+  primaryColor: string;        // hex, e.g. #2563eb
+  templateStyle: PdfTemplateStyle;
+  companyPhone?: string;
+  companyEmail?: string;
+  companyWebsite?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bankIfsc?: string;
+  upiId?: string;
+  defaultNotes?: string;
+  defaultTerms?: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -368,6 +382,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workingHoursEnd: "18:00",
   clientCategories: [...CLIENT_CATEGORIES],
   customFields: { clients: [], leads: [], products: [] },
+  primaryColor: "#2563eb",
+  templateStyle: "modern",
+  companyPhone: "",
+  companyEmail: "",
+  companyWebsite: "",
+  bankName: "",
+  bankAccount: "",
+  bankIfsc: "",
+  upiId: "",
+  defaultNotes: "",
+  defaultTerms: "",
 };
 
 export type CollectionPath =

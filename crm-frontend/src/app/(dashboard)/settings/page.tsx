@@ -316,6 +316,121 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+
+      {/* ── PDF / Document branding ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>PDF &amp; Document branding</CardTitle>
+          <CardDescription>Controls the look of exported invoices and quotations.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+
+          {/* Template style */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            {(['modern', 'corporate', 'minimal'] as const).map((style) => {
+              const active = (form.templateStyle ?? 'modern') === style;
+              const labels: Record<string, string> = { modern: 'Modern', corporate: 'Corporate', minimal: 'Minimal' };
+              const desc: Record<string, string> = { modern: 'Colored header, striped rows', corporate: 'Solid header, grid borders', minimal: 'Clean white header, subtle tones' };
+              return (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => set('templateStyle', style)}
+                  className={`rounded-lg border-2 p-3 text-left transition-all cursor-pointer ${active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                >
+                  <p className={`text-sm font-semibold ${active ? 'text-primary' : ''}`}>{labels[style]}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{desc[style]}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Primary color */}
+          <div className="grid gap-1.5">
+            <Label>Brand / accent color</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={form.primaryColor ?? '#2563eb'}
+                onChange={(e) => set('primaryColor', e.target.value)}
+                className="h-10 w-14 cursor-pointer rounded border border-input bg-background p-0.5"
+                aria-label="Primary color picker"
+              />
+              <Input
+                value={form.primaryColor ?? '#2563eb'}
+                onChange={(e) => set('primaryColor', e.target.value)}
+                placeholder="#2563eb"
+                className="max-w-[140px] font-mono text-sm"
+              />
+              <div
+                className="h-10 flex-1 rounded border border-input"
+                style={{ background: form.primaryColor ?? '#2563eb' }}
+              />
+            </div>
+          </div>
+
+          {/* Company contact */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Company phone</Label>
+              <Input value={form.companyPhone ?? ''} onChange={(e) => set('companyPhone', e.target.value)} placeholder="+91 98765 43210" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Company email</Label>
+              <Input value={form.companyEmail ?? ''} onChange={(e) => set('companyEmail', e.target.value)} placeholder="billing@company.com" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Website</Label>
+              <Input value={form.companyWebsite ?? ''} onChange={(e) => set('companyWebsite', e.target.value)} placeholder="https://company.com" />
+            </div>
+          </div>
+
+          {/* Bank details */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Bank name</Label>
+              <Input value={form.bankName ?? ''} onChange={(e) => set('bankName', e.target.value)} placeholder="HDFC Bank" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Account number</Label>
+              <Input value={form.bankAccount ?? ''} onChange={(e) => set('bankAccount', e.target.value)} placeholder="0123456789" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>IFSC code</Label>
+              <Input value={form.bankIfsc ?? ''} onChange={(e) => set('bankIfsc', e.target.value)} placeholder="HDFC0001234" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>UPI ID</Label>
+              <Input value={form.upiId ?? ''} onChange={(e) => set('upiId', e.target.value)} placeholder="company@upi" />
+            </div>
+          </div>
+
+          {/* Default notes & terms */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label>Default notes</Label>
+              <textarea
+                value={form.defaultNotes ?? ''}
+                onChange={(e) => set('defaultNotes', e.target.value)}
+                rows={3}
+                placeholder="Thank you for your business…"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Default terms &amp; conditions</Label>
+              <textarea
+                value={form.defaultTerms ?? ''}
+                onChange={(e) => set('defaultTerms', e.target.value)}
+                rows={3}
+                placeholder="Payment due within 30 days…"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
@@ -325,6 +440,7 @@ export default function SettingsPage() {
           <ThemeSwitcher />
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader>

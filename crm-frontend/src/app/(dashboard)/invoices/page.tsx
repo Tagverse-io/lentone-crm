@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Download } from 'lucide-react';
+import Link from 'next/link';
+import { Download, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   INVOICE_STATUSES,
@@ -155,14 +156,25 @@ export default function InvoicesPage() {
 
   const downloadPdf = async (inv: Invoice) => {
     try {
-      await exportDocumentPdf({
+      const billTo = await billToFor(inv);
+      exportDocumentPdf({
         kind: 'INVOICE',
         number: inv.number,
         issueDate: inv.issueDate ?? inv.createdAt.slice(0, 10),
         dueDate: inv.dueDate,
-        company: { name: settings?.companyName ?? 'Company', sub: settings?.address, logoUrl: settings?.logo },
-        billTo: await billToFor(inv),
-        items: inv.items,
+        status: inv.status,
+        settings: { ...({ companyName: 'Company', primaryColor: '#2563eb', templateStyle: 'modern', taxRate: 18, currency: '₹', invoicePrefix: 'INV', quotationPrefix: 'Q', orderPrefix: 'ORD', defaultRowsPerPage: 25, defaultTaskSlot: '10:00', lowStockThreshold: 10, workingHoursStart: '09:00', workingHoursEnd: '18:00', clientCategories: [], customFields: { clients: [], leads: [], products: [] } }), ...settings },
+        clientName: billTo?.name,
+        clientCompany: billTo?.name,
+        clientEmail: billTo?.email,
+        clientPhone: billTo?.phone,
+        clientAddress: billTo?.address,
+        items: (inv.items ?? []).map((it) => ({
+          description: it.description ?? '',
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.unitPrice) || 0,
+          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+        })),
         subtotal: inv.subtotal,
         tax: inv.tax,
         discount: inv.discount,
@@ -222,9 +234,17 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
-        <p className="text-sm text-muted-foreground">Auto-numbered invoices — Unpaid, Partial, Paid, Overdue. Sync unpaid past-due to Overdue.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
+          <p className="text-sm text-muted-foreground">Auto-numbered invoices — Unpaid, Partial, Paid, Overdue. Sync unpaid past-due to Overdue.</p>
+        </div>
+        <Link href="/invoices/new">
+          <Button className="gap-2">
+            <FileText className="h-4 w-4" />
+            Document Builder
+          </Button>
+        </Link>
       </div>
 
       <div key={refreshKey}>
@@ -243,6 +263,11 @@ export default function InvoicesPage() {
           onPreview={openPreview}
           extraActions={(inv) => (
             <>
+              <Link href={`/invoices/${inv.id}`} title="Edit in Document Builder">
+                <Button variant="ghost" size="icon" aria-label="Open Document Builder">
+                  <FileText size={16} />
+                </Button>
+              </Link>
               <Button variant="ghost" size="icon" title="Export PDF" aria-label="Export PDF" onClick={() => downloadPdf(inv)}>
                 <Download size={16} />
               </Button>

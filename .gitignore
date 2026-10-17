@@ -9,3 +9,5 @@ crm-frontend/.env*.local
 .DS_Store
 *.log
 .vercel
+.env*
+*.tsbuildinfo

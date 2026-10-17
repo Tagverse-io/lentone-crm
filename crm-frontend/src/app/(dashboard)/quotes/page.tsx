@@ -8,7 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Download, FileCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Download, FileCheck, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   QUOTATION_STATUSES,
@@ -200,14 +201,25 @@ export default function QuotesPage() {
 
   const downloadPdf = async (q: Quotation) => {
     try {
-      await exportDocumentPdf({
+      const billTo = await billToFor(q);
+      exportDocumentPdf({
         kind: 'QUOTATION',
         number: q.number,
         issueDate: q.issueDate ?? q.createdAt.slice(0, 10),
         validUntil: q.validUntil,
-        company: { name: settings?.companyName ?? 'Company', sub: settings?.address, logoUrl: settings?.logo },
-        billTo: await billToFor(q),
-        items: q.items,
+        status: q.status,
+        settings: { ...({ companyName: 'Company', primaryColor: '#2563eb', templateStyle: 'modern', taxRate: 18, currency: '₹', invoicePrefix: 'INV', quotationPrefix: 'Q', orderPrefix: 'ORD', defaultRowsPerPage: 25, defaultTaskSlot: '10:00', lowStockThreshold: 10, workingHoursStart: '09:00', workingHoursEnd: '18:00', clientCategories: [], customFields: { clients: [], leads: [], products: [] } }), ...settings },
+        clientName: billTo?.name,
+        clientCompany: billTo?.name,
+        clientEmail: billTo?.email,
+        clientPhone: billTo?.phone,
+        clientAddress: billTo?.address,
+        items: (q.items ?? []).map((it) => ({
+          description: it.description ?? '',
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.unitPrice) || 0,
+          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+        })),
         subtotal: q.subtotal,
         tax: q.tax,
         discount: q.discount,
@@ -232,9 +244,17 @@ export default function QuotesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Quotations</h1>
-        <p className="text-sm text-muted-foreground">Line items from inventory, tax, discount — convert accepted quotes to order + invoice.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Quotations</h1>
+          <p className="text-sm text-muted-foreground">Line items from inventory, tax, discount — convert accepted quotes to order + invoice.</p>
+        </div>
+        <Link href="/quotes/new">
+          <Button className="gap-2">
+            <FileText className="h-4 w-4" />
+            Document Builder
+          </Button>
+        </Link>
       </div>
 
       <div key={refreshKey}>
@@ -253,6 +273,11 @@ export default function QuotesPage() {
           onPreview={openPreview}
           extraActions={(q) => (
             <>
+              <Link href={`/quotes/${q.id}`} title="Edit in Document Builder">
+                <Button variant="ghost" size="icon" aria-label="Open Document Builder">
+                  <FileText size={16} />
+                </Button>
+              </Link>
               <Button variant="ghost" size="icon" title="Export PDF" aria-label="Export PDF" onClick={() => downloadPdf(q)}>
                 <Download size={16} />
               </Button>

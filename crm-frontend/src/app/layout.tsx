@@ -6,6 +6,8 @@ import { AuthProvider } from '@/lib/firebase/auth-context';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 
+import { WorkspaceProvider } from '@/lib/settings/workspace-context';
+
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
@@ -33,8 +35,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            {children}
-            <Toaster />
+            <WorkspaceProvider>
+              {children}
+              <Toaster />
+            </WorkspaceProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
