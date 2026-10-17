@@ -15,6 +15,7 @@ import { getCompanySettings, getBase64ImageFromURL } from './helpers';
 import type { CompanySettings } from './types';
 import type { Quotation, QuotationItem, Invoice, Contract, User, Project } from '@/lib/db/types';
 import { formatMoney, formatDateS, resolveFormatSettings, type FormatSettings } from '@/lib/format';
+import { brand } from '@/brand.config';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PW = 210;    // A4 width  mm
@@ -62,9 +63,22 @@ async function addLogo(doc: jsPDF, url: string | undefined | null): Promise<numb
   if (!url) return M;
   try {
     const data = await getBase64ImageFromURL(url);
-    // Draw logo at standard size (max 40x20)
-    doc.addImage(data, 'PNG', M, M, 35, 35 * 0.7);
-    return M + 28;
+    const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+      img.onerror = () => reject(new Error('logo decode failed'));
+      img.src = data;
+    });
+    // Fit inside 35x24.5mm box, preserving aspect ratio
+    const ratio = size.w / size.h;
+    let drawW = 35;
+    let drawH = drawW / ratio;
+    if (drawH > 24.5) {
+      drawH = 24.5;
+      drawW = drawH * ratio;
+    }
+    doc.addImage(data, 'PNG', M, M, drawW, drawH);
+    return M + drawH + 3.5;
   } catch {
     return M;
   }
@@ -98,9 +112,9 @@ export async function generateQuotationPdf(
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
-  let startY = await addLogo(doc, s.logo_url);
+  let startY = await addLogo(doc, s.logo_url || brand.logo);
 
-  if (!s.logo_url) {
+  if (startY === M) {
     doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;
@@ -336,9 +350,9 @@ export async function generateInvoicePdf(
     doc.rect(0, 0, PW, 4, 'F');
   }
 
-  let startY = await addLogo(doc, s.logo_url);
+  let startY = await addLogo(doc, s.logo_url || brand.logo);
 
-  if (!s.logo_url) {
+  if (startY === M) {
     doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;
@@ -588,9 +602,9 @@ export async function generateContractPdf(
     doc.rect(0, 0, PW, 4, 'F');
   }
 
-  let startY = await addLogo(doc, s.logo_url);
+  let startY = await addLogo(doc, s.logo_url || brand.logo);
 
-  if (!s.logo_url) {
+  if (startY === M) {
     doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;

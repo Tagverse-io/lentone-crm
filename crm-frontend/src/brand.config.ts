@@ -39,7 +39,7 @@ function envFlag(name: string, fallback: boolean): boolean {
 }
 
 export const brand: BrandConfig = {
-  appName: env("NEXT_PUBLIC_APP_NAME", "Your CRM"),
+  appName: env("NEXT_PUBLIC_APP_NAME", "Lentone CRM"),
   logo: env("NEXT_PUBLIC_LOGO", "/logo.png"),
   favicon: env("NEXT_PUBLIC_FAVICON", "/logo.png"),
   logoWhiteArt: envFlag("NEXT_PUBLIC_LOGO_WHITE", false),
