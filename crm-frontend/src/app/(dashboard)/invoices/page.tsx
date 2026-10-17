@@ -7,9 +7,16 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Download, Eye, FileText } from 'lucide-react';
+import { Download, ExternalLink, Eye, FileText, MoreHorizontal, Pencil, RefreshCw, Trash2, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   INVOICE_STATUSES,
@@ -32,6 +39,7 @@ import {
   type Invoice,
   type Payment,
   type Quotation,
+  type Worker,
 } from '@/lib/db';
 import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
 import { DataTable } from '@/components/ui/data-table';
@@ -45,6 +53,7 @@ export default function InvoicesPage() {
 
   const [clients, setClients] = useState<Client[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [quotationId, setQuotationId] = useState('');
@@ -63,6 +72,11 @@ export default function InvoicesPage() {
   const [preview, setPreview] = useState<Invoice | null>(null);
   const [prevRows, setPrevRows] = useState<Invoice[]>([]);
   const [payRows, setPayRows] = useState<Payment[]>([]);
+
+  // Dispatch Delivery modal state
+  const [dispatchInvoice, setDispatchInvoice] = useState<Invoice | null>(null);
+  const [dispatchWorkerId, setDispatchWorkerId] = useState('');
+  const [dispatching, setDispatching] = useState(false);
 
   const fetchRows = useMemo(() => collectionQuery<Invoice>('invoices', 'createdAt', 'numberKey'), []);
 
@@ -284,6 +298,72 @@ export default function InvoicesPage() {
     }
   };
 
+  const openDispatch = (inv: Invoice) => {
+    Promise.all([
+      getCollection<Client>('clients').then(setClients),
+      getCollection<Worker>('workers').then(setWorkers),
+    ]).catch(() => undefined);
+    setDispatchInvoice(inv);
+    setDispatchWorkerId('');
+  };
+
+  const submitDispatch = async () => {
+    if (!dispatchInvoice) return;
+    setDispatching(true);
+    try {
+      const client = clients.find((c) => c.id === dispatchInvoice.clientId) ?? (await getItem<Client>('clients', dispatchInvoice.clientId).catch(() => null));
+      const worker = workers.find((w) => w.id === dispatchWorkerId);
+
+      let orderId = dispatchInvoice.orderId;
+      if (!orderId) {
+        const oSeq = await nextSequence('orders');
+        const orderNumber = formatNumber(settings?.orderPrefix ?? 'ORD', oSeq);
+        orderId = await createItem('orders', {
+          number: orderNumber,
+          numberKey: nameKeyOf(orderNumber),
+          clientId: dispatchInvoice.clientId,
+          clientName: dispatchInvoice.clientName || client?.name,
+          clientKey: dispatchInvoice.clientName ? nameKeyOf(dispatchInvoice.clientName) : undefined,
+          invoiceId: dispatchInvoice.id,
+          items: dispatchInvoice.items || [],
+          subtotal: dispatchInvoice.subtotal || dispatchInvoice.total,
+          tax: dispatchInvoice.tax || 0,
+          discount: dispatchInvoice.discount || 0,
+          total: dispatchInvoice.total,
+          status: 'Confirmed',
+        });
+        await updateItem('invoices', dispatchInvoice.id, { orderId });
+      }
+
+      const deliveryId = await createItem('deliveries', {
+        clientId: dispatchInvoice.clientId,
+        clientName: dispatchInvoice.clientName || client?.name,
+        clientKey: dispatchInvoice.clientName ? nameKeyOf(dispatchInvoice.clientName) : undefined,
+        invoiceId: dispatchInvoice.id,
+        orderId: orderId || undefined,
+        workerId: dispatchWorkerId || undefined,
+        workerName: worker?.name,
+        status: 'Pending',
+        mapsUrl: client?.mapsUrl || undefined,
+      });
+
+      await updateItem('invoices', dispatchInvoice.id, { deliveryId });
+      if (orderId) {
+        await updateItem('orders', orderId, { deliveryId });
+      }
+      await logHistory('invoices', dispatchInvoice.id, 'Delivery dispatched', `Assigned to ${worker?.name || 'Unassigned'}`);
+      await logHistory('deliveries', deliveryId, 'Delivery created', `From invoice ${dispatchInvoice.number}`);
+
+      toast.success(`Delivery created for invoice ${dispatchInvoice.number}`);
+      setDispatchInvoice(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to dispatch delivery');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   const acceptedQuotes = quotations.filter((q) => q.status === 'Accepted');
 
   return (
@@ -312,28 +392,68 @@ export default function InvoicesPage() {
           pollMs={POLL_FAST_MS}
           addLabel="New invoice"
           onAdd={() => router.push('/invoices/new')}
-          onEdit={(inv) => router.push(`/invoices/${inv.id}`)}
-          onDelete={remove}
-          onPreview={openPreview}
           extraActions={(inv) => (
-            <>
-              <Link href={`/invoices/${inv.id}`} title="Edit in Document Builder">
-                <Button variant="ghost" size="icon" aria-label="Open Document Builder">
-                  <FileText size={16} />
-                </Button>
-              </Link>
-              <Button variant="ghost" size="icon" title="Preview PDF" aria-label="Preview PDF" onClick={() => previewPdf(inv)}>
-                <Eye size={16} />
-              </Button>
-              <Button variant="ghost" size="icon" title="Download PDF" aria-label="Download PDF" onClick={() => downloadPdf(inv)}>
-                <Download size={16} />
-              </Button>
-              {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
-                <Button variant="ghost" size="sm" title="Recompute status from payments + due date" onClick={() => syncStatus(inv)}>
-                  Sync
+            <div className="flex items-center gap-1.5 justify-end">
+              {(inv as any).deliveryId ? (
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800">
+                  <Truck className="h-3 w-3 mr-1 inline" />
+                  Dispatched
+                </Badge>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                  title="Create Delivery"
+                  onClick={() => openDispatch(inv)}
+                >
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>Dispatch Delivery</span>
                 </Button>
               )}
-            </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => openPreview(inv)}>
+                    <Eye className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>View details</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/invoices/${inv.id}`)}>
+                    <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Edit in Document Builder</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => previewPdf(inv)}>
+                    <ExternalLink className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Preview PDF</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => downloadPdf(inv)}>
+                    <Download className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Download PDF</span>
+                  </DropdownMenuItem>
+                  {!(inv as any).deliveryId && (
+                    <DropdownMenuItem onClick={() => openDispatch(inv)}>
+                      <Truck className="h-4 w-4 mr-2 text-blue-600" />
+                      <span className="text-blue-600 font-medium">Dispatch Delivery</span>
+                    </DropdownMenuItem>
+                  )}
+                  {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
+                    <DropdownMenuItem onClick={() => syncStatus(inv)}>
+                      <RefreshCw className="h-4 w-4 mr-2 text-muted-foreground" />
+                      <span>Sync Status</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => remove(inv)} className="text-destructive focus:text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    <span>Delete</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
           emptyTitle="No invoices"
           emptyHint="Create an invoice from an accepted quotation."
@@ -414,6 +534,44 @@ export default function InvoicesPage() {
             </Button>
             <Button onClick={saveEdit} disabled={editSaving}>
               {editSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dispatch Delivery Modal */}
+      <Dialog open={Boolean(dispatchInvoice)} onOpenChange={(o) => !o && setDispatchInvoice(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dispatch Delivery · {dispatchInvoice?.number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Assign a field worker to deliver invoice <strong className="text-foreground">{dispatchInvoice?.number}</strong> for <strong className="text-foreground">{dispatchInvoice?.clientName || 'the client'}</strong>.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Field Worker</Label>
+              <Select value={dispatchWorkerId || 'none'} onValueChange={(v) => setDispatchWorkerId(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select worker (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned (queue for open pickup)</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name} {w.phone ? `(${w.phone})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDispatchInvoice(null)}>
+              Cancel
+            </Button>
+            <Button onClick={submitDispatch} disabled={dispatching}>
+              {dispatching ? 'Dispatching…' : 'Confirm Dispatch'}
             </Button>
           </DialogFooter>
         </DialogContent>

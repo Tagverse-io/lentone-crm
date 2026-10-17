@@ -7,7 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ExternalLink, Eye, MoreHorizontal, Pencil, Trash2, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ORDER_STATUSES,
@@ -29,6 +36,7 @@ import {
   type OrderLineItem,
   type OrderStatus,
   type Product,
+  type Worker,
 } from '@/lib/db';
 import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
 import { DataTable } from '@/components/ui/data-table';
@@ -44,6 +52,7 @@ export default function OrdersPage() {
 
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
@@ -55,12 +64,22 @@ export default function OrdersPage() {
   const [preview, setPreview] = useState<Order | null>(null);
   const [prevRows, setPrevRows] = useState<Order[]>([]);
 
+  // Dispatch Delivery modal state
+  const [dispatchOrder, setDispatchOrder] = useState<Order | null>(null);
+  const [dispatchWorkerId, setDispatchWorkerId] = useState('');
+  const [dispatching, setDispatching] = useState(false);
+
   const fetchRows = useMemo(() => collectionQuery<Order>('orders', 'createdAt', 'numberKey'), []);
 
   const loadRefs = async () => {
-    const [cs, ps] = await Promise.all([getCollection<Client>('clients'), getCollection<Product>('products')]);
+    const [cs, ps, ws] = await Promise.all([
+      getCollection<Client>('clients'),
+      getCollection<Product>('products'),
+      getCollection<Worker>('workers'),
+    ]);
     setClients(cs);
     setProducts(ps);
+    setWorkers(ws);
   };
 
   const startCreate = () => {
@@ -150,6 +169,42 @@ export default function OrdersPage() {
     }
   };
 
+  const openDispatch = (o: Order) => {
+    loadRefs().catch(() => undefined);
+    setDispatchOrder(o);
+    setDispatchWorkerId('');
+  };
+
+  const submitDispatch = async () => {
+    if (!dispatchOrder) return;
+    setDispatching(true);
+    try {
+      const client = clients.find((c) => c.id === dispatchOrder.clientId);
+      const worker = workers.find((w) => w.id === dispatchWorkerId);
+      const deliveryId = await createItem('deliveries', {
+        clientId: dispatchOrder.clientId,
+        clientName: dispatchOrder.clientName || client?.name,
+        clientKey: dispatchOrder.clientName ? nameKeyOf(dispatchOrder.clientName) : undefined,
+        orderId: dispatchOrder.id,
+        invoiceId: dispatchOrder.invoiceId || undefined,
+        workerId: dispatchWorkerId || undefined,
+        workerName: worker?.name,
+        status: 'Pending',
+        mapsUrl: dispatchOrder.mapsUrl || client?.mapsUrl || undefined,
+      });
+      await updateItem('orders', dispatchOrder.id, { deliveryId });
+      await logHistory('orders', dispatchOrder.id, 'Delivery created', `Assigned to ${worker?.name || 'Unassigned'}`);
+      await logHistory('deliveries', deliveryId, 'Delivery created', `From order ${dispatchOrder.number}`);
+      toast.success(`Delivery created for order ${dispatchOrder.number}`);
+      setDispatchOrder(null);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to dispatch delivery');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -168,9 +223,55 @@ export default function OrdersPage() {
           pollMs={POLL_FAST_MS}
           addLabel="New order"
           onAdd={startCreate}
-          onEdit={startEdit}
-          onDelete={remove}
-          onPreview={openPreview}
+          extraActions={(o) => (
+            <div className="flex items-center gap-1.5 justify-end">
+              {o.deliveryId ? (
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800">
+                  <Truck className="h-3 w-3 mr-1 inline" />
+                  Dispatched
+                </Badge>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                  title="Create Delivery"
+                  onClick={() => openDispatch(o)}
+                >
+                  <Truck className="h-3.5 w-3.5" />
+                  <span>Dispatch Delivery</span>
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => openPreview(o)}>
+                    <Eye className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>View details</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => startEdit(o)}>
+                    <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Edit order</span>
+                  </DropdownMenuItem>
+                  {!o.deliveryId && (
+                    <DropdownMenuItem onClick={() => openDispatch(o)}>
+                      <Truck className="h-4 w-4 mr-2 text-blue-600" />
+                      <span className="text-blue-600 font-medium">Dispatch Delivery</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => remove(o)} className="text-destructive focus:text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    <span>Delete</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
           emptyTitle="No orders"
           emptyHint="Create an order, or use Assign Work on the Field Force page."
           columns={[
@@ -181,6 +282,44 @@ export default function OrdersPage() {
           ]}
         />
       </div>
+
+      {/* Dispatch Delivery Modal */}
+      <Dialog open={Boolean(dispatchOrder)} onOpenChange={(o) => !o && setDispatchOrder(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dispatch Delivery · {dispatchOrder?.number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Assign a field worker to deliver order <strong className="text-foreground">{dispatchOrder?.number}</strong> for <strong className="text-foreground">{dispatchOrder?.clientName || 'the client'}</strong>.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Field Worker</Label>
+              <Select value={dispatchWorkerId || 'none'} onValueChange={(v) => setDispatchWorkerId(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select worker (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned (queue for open pickup)</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name} {w.phone ? `(${w.phone})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDispatchOrder(null)}>
+              Cancel
+            </Button>
+            <Button onClick={submitDispatch} disabled={dispatching}>
+              {dispatching ? 'Dispatching…' : 'Confirm Dispatch'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

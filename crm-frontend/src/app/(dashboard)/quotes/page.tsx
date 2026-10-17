@@ -8,9 +8,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Download, Eye, FileCheck, FileText, Plus } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, Eye, FileCheck, FileText, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   QUOTATION_STATUSES,
@@ -171,11 +178,10 @@ export default function QuotesPage() {
   };
 
   const convert = async (q: Quotation) => {
-    if (q.status !== 'Accepted') {
-      toast.error('Only accepted quotations can be converted');
-      return;
-    }
-    if (!window.confirm(`Convert ${q.number} to an order + invoice? Stock will be deducted.`)) return;
+    const confirmMsg = q.status === 'Accepted'
+      ? `Convert quotation ${q.number} to an order and invoice? Stock will be deducted.`
+      : `Mark quotation ${q.number} as Accepted and convert to an order and invoice? Stock will be deducted.`;
+    if (!window.confirm(confirmMsg)) return;
     setConverting(q.id);
     try {
       const [oSeq, iSeq] = await Promise.all([nextSequence('orders'), nextSequence('invoices')]);
@@ -320,28 +326,63 @@ export default function QuotesPage() {
           pollMs={POLL_FAST_MS}
           addLabel="New quotation"
           onAdd={() => router.push('/quotes/new')}
-          onEdit={(q) => router.push(`/quotes/${q.id}`)}
-          onDelete={remove}
-          onPreview={openPreview}
           extraActions={(q) => (
-            <>
-              <Link href={`/quotes/${q.id}`} title="Edit in Document Builder">
-                <Button variant="ghost" size="icon" aria-label="Open Document Builder">
-                  <FileText size={16} />
-                </Button>
-              </Link>
-              <Button variant="ghost" size="icon" title="Preview PDF" aria-label="Preview PDF" onClick={() => previewPdf(q)}>
-                <Eye size={16} />
-              </Button>
-              <Button variant="ghost" size="icon" title="Download PDF" aria-label="Download PDF" onClick={() => downloadPdf(q)}>
-                <Download size={16} />
-              </Button>
-              {q.status === 'Accepted' && (
-                <Button variant="ghost" size="icon" title="Convert to order and invoice" aria-label="Convert" onClick={() => convert(q)} disabled={converting === q.id}>
-                  <FileCheck size={16} />
+            <div className="flex items-center gap-1.5 justify-end">
+              {q.orderId || q.invoiceId ? (
+                <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                  <CheckCircle2 className="h-3 w-3 mr-1 inline" />
+                  Converted
+                </Badge>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                  title="Convert to Order & Invoice"
+                  onClick={() => convert(q)}
+                  disabled={converting === q.id}
+                >
+                  <FileCheck className="h-3.5 w-3.5" />
+                  <span>Convert to Invoice</span>
                 </Button>
               )}
-            </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => openPreview(q)}>
+                    <Eye className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>View details</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/quotes/${q.id}`)}>
+                    <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Edit quotation</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => previewPdf(q)}>
+                    <ExternalLink className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Preview PDF</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => downloadPdf(q)}>
+                    <Download className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span>Download PDF</span>
+                  </DropdownMenuItem>
+                  {!q.orderId && !q.invoiceId && (
+                    <DropdownMenuItem onClick={() => convert(q)} disabled={converting === q.id}>
+                      <FileCheck className="h-4 w-4 mr-2 text-emerald-600" />
+                      <span className="text-emerald-600 font-medium">Convert to Invoice</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => remove(q)} className="text-destructive focus:text-destructive">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    <span>Delete</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
           emptyTitle="No quotations"
           emptyHint="Create your first quotation with line items."
