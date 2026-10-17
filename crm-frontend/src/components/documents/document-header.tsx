@@ -40,7 +40,7 @@ export function DocumentHeader({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">{docType === 'quote' ? 'Quotation Details' : 'Invoice Details'}</h2>
-          <p className="text-sm text-muted-foreground">Configure the document number and dates.</p>
+          <p className="text-sm text-muted-foreground">The document number is generated automatically.</p>
         </div>
         {meta.status && (
           <Badge className={statusColor || STATUS_COLORS[meta.status] || 'bg-gray-100 text-gray-700'}>
@@ -54,8 +54,9 @@ export function DocumentHeader({
           <Label>Document Number</Label>
           <Input
             value={meta.document_number}
-            onChange={(e) => onMetaChange({ document_number: e.target.value })}
-            placeholder="QTE-2024-001"
+            readOnly
+            placeholder="Generating…"
+            className="bg-muted font-mono"
           />
         </div>
       </div>

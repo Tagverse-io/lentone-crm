@@ -149,10 +149,15 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           finalStatus === 'rejected' ? 'Rejected' :
           finalStatus === 'sent' ? 'Sent' : 'Draft';
 
+        let docNumber = meta.document_number;
+        if (!existingQuote && !docNumber) {
+          docNumber = (await backend.nextNumber(workspace?.id || '', 'quote')).number;
+        }
+
         const quotationData = {
-          quotation_number: meta.document_number,
-          number: meta.document_number,
-          numberKey: meta.document_number.toLowerCase(),
+          quotation_number: docNumber,
+          number: docNumber,
+          numberKey: docNumber.toLowerCase(),
           clientId: (existingQuote as any)?.clientId || clientDisplayName,
           clientName: clientDisplayName,
           clientKey: clientDisplayName.toLowerCase(),

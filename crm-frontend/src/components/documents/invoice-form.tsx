@@ -198,10 +198,15 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
 
         const clientDisplayName = client.company || client.contact_person || 'Client';
 
+        let docNumber = meta.document_number;
+        if (!existingInvoice && !docNumber) {
+          docNumber = (await backend.nextNumber(workspace?.id || '', 'invoice')).number;
+        }
+
         const invoiceData = {
-          invoice_number: meta.document_number,
-          number: meta.document_number,
-          numberKey: meta.document_number.toLowerCase(),
+          invoice_number: docNumber,
+          number: docNumber,
+          numberKey: docNumber.toLowerCase(),
           clientId: (existingInvoice as any)?.clientId || clientDisplayName,
           clientName: clientDisplayName,
           clientKey: clientDisplayName.toLowerCase(),
