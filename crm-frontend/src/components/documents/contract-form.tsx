@@ -20,8 +20,12 @@ import { toast } from 'sonner';
 import { DocumentLayout } from './document-layout';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { createContract, updateContract, getLeads } from '@/lib/firebase/database';
+import { createItem, updateItem, getCollection } from '@/lib/db';
 import type { Contract, ContractTemplateType, ContractStatus, Lead } from '@/lib/db/types';
+
+const createContract = (data: any) => createItem('contracts', data);
+const updateContract = (id: string, data: any) => updateItem('contracts', id, data);
+const getLeads = (_wsId?: string) => getCollection<Lead>('leads').catch(() => []);
 import { CONTRACT_TEMPLATES, interpolateContractTemplate } from './contract-templates';
 import jsPDF from 'jspdf';
 

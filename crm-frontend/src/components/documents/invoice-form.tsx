@@ -13,8 +13,6 @@ import { PaymentSection } from './payment-section';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { backend } from '@/lib/backend-client';
-import { createInvoice, updateInvoice } from '@/lib/firebase/database';
 import type { Invoice, InvoiceStatus } from '@/lib/db/types';
 import type {
   DocumentMeta,
@@ -24,7 +22,13 @@ import type {
   DocumentPayment,
   DocumentNotes,
 } from './types';
-import { createEmptyItem, calculatePricing } from './types';
+import {
+  createEmptyItem,
+  calculatePricing,
+  backend,
+  createInvoice,
+  updateInvoice,
+} from './types';
 
 interface InvoiceFormProps {
   existingInvoice?: Invoice | null;

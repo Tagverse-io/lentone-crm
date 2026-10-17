@@ -12,8 +12,6 @@ import { PricingSummary } from './pricing-summary';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
-import { backend } from '@/lib/backend-client';
-import { createQuotation, updateQuotation } from '@/lib/firebase/database';
 import type { Quotation, QuotationStatus } from '@/lib/db/types';
 import type {
   DocumentMeta,
@@ -22,7 +20,13 @@ import type {
   DocumentPricing,
   DocumentNotes,
 } from './types';
-import { createEmptyItem, calculatePricing } from './types';
+import {
+  createEmptyItem,
+  calculatePricing,
+  backend,
+  createQuotation,
+  updateQuotation,
+} from './types';
 
 interface QuoteFormProps {
   existingQuote?: Quotation | null;
