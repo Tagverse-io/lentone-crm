@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Download, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -38,6 +39,7 @@ import { RecordPreview } from '@/components/record-preview';
 import { exportDocumentPdf } from '@/lib/pdf';
 
 export default function InvoicesPage() {
+  const router = useRouter();
   const { data: settings } = useAppSettings();
   const currency = settings?.currency ?? '₹';
 
@@ -257,8 +259,8 @@ export default function InvoicesPage() {
           defaultPageSize={settings?.defaultRowsPerPage ?? 25}
           pollMs={POLL_FAST_MS}
           addLabel="New invoice"
-          onAdd={startCreate}
-          onEdit={startEdit}
+          onAdd={() => router.push('/invoices/new')}
+          onEdit={(inv) => router.push(`/invoices/${inv.id}`)}
           onDelete={remove}
           onPreview={openPreview}
           extraActions={(inv) => (

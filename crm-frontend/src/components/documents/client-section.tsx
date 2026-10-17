@@ -5,10 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableSelect } from '@/components/ui/searchable-select';
-import { useAuth } from '@/lib/firebase/auth-context';
-import { getLeads } from '@/lib/firebase/database';
-import type { Lead } from '@/lib/db/types';
+import { getCollection, type Client, type Lead } from '@/lib/db';
 import type { DocumentClient } from './types';
+
+interface NormalizedContact {
+  company: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  gstin: string;
+}
 
 interface ClientSectionProps {
   client: DocumentClient;
@@ -16,34 +23,56 @@ interface ClientSectionProps {
 }
 
 export function ClientSection({ client, onClientChange }: ClientSectionProps) {
-  const { workspace, user } = useAuth();
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [contacts, setContacts] = useState<NormalizedContact[]>([]);
 
   useEffect(() => {
-    if (workspace?.id) {
-      getLeads(workspace?.id).then(setLeads);
-    }
-  }, [workspace?.id]);
+    Promise.all([
+      getCollection<Client>('clients').catch(() => []),
+      getCollection<Lead>('leads').catch(() => []),
+    ]).then(([clients, leads]) => {
+      const list: NormalizedContact[] = [
+        ...clients.map((c) => ({
+          company: c.name,
+          contactPerson: c.contactPerson || c.name,
+          email: c.email || '',
+          phone: c.phone || '',
+          address: c.address || '',
+          gstin: c.gstin || '',
+        })),
+        ...leads.map((l) => ({
+          company: l.clientName || l.contactName,
+          contactPerson: l.contactName,
+          email: l.email || '',
+          phone: l.phone || '',
+          address: '',
+          gstin: '',
+        })),
+      ];
+      setContacts(list);
+    });
+  }, []);
 
   const options = Array.from(
     new Map(
-      leads
-        .filter((l) => l.company || l.name)
-        .map((l) => {
-          const val = l.company || l.name;
+      contacts
+        .filter((c) => c.company || c.contactPerson)
+        .map((c) => {
+          const val = c.company || c.contactPerson;
           return [val, { label: val, value: val, group: 'Saved Clients' }];
         })
     ).values()
   );
 
   const handleCompanySelect = (val: string) => {
-    const lead = leads.find((l) => l.company === val || l.name === val);
-    if (lead) {
+    const contact = contacts.find((c) => c.company === val || c.contactPerson === val);
+    if (contact) {
       onClientChange({
-        company: val,
-        contact_person: lead.name || '',
-        email: lead.email || '',
-        phone: lead.phone || '',
+        company: contact.company || contact.contactPerson,
+        contact_person: contact.contactPerson || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        address: contact.address || '',
+        gstin: contact.gstin || '',
       });
     } else {
       onClientChange({ company: val });

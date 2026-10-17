@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { Download, FileCheck, FileText } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Download, FileCheck, FileText, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   QUOTATION_STATUSES,
@@ -43,6 +44,7 @@ import { exportDocumentPdf } from '@/lib/pdf';
 const EMPTY_ITEM: OrderLineItem = { description: '', quantity: 1, unitPrice: 0 };
 
 export default function QuotesPage() {
+  const router = useRouter();
   const { data: settings } = useAppSettings();
   const currency = settings?.currency ?? '₹';
   const taxRate = settings?.taxRate ?? 18;
@@ -267,8 +269,8 @@ export default function QuotesPage() {
           defaultPageSize={settings?.defaultRowsPerPage ?? 25}
           pollMs={POLL_FAST_MS}
           addLabel="New quotation"
-          onAdd={startCreate}
-          onEdit={startEdit}
+          onAdd={() => router.push('/quotes/new')}
+          onEdit={(q) => router.push(`/quotes/${q.id}`)}
           onDelete={remove}
           onPreview={openPreview}
           extraActions={(q) => (

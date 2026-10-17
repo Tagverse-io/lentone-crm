@@ -37,42 +37,48 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
   // Form state
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingQuote?.quotation_number || '',
-    status: existingQuote?.status || 'draft',
-    issue_date: existingQuote?.created_at
+    document_number: existingQuote?.quotation_number || (existingQuote as any)?.number || '',
+    status: (existingQuote?.status || 'draft').toLowerCase(),
+    issue_date: (existingQuote as any)?.issueDate
+      ? (existingQuote as any).issueDate
+      : existingQuote?.created_at
       ? new Date(existingQuote.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
-    valid_until: existingQuote?.valid_until
+    valid_until: (existingQuote as any)?.validUntil
+      ? (existingQuote as any).validUntil
+      : existingQuote?.valid_until
       ? new Date(existingQuote.valid_until).toISOString().split('T')[0]
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    currency: existingQuote?.currency || settings.general.default_currency || 'USD',
+    currency: existingQuote?.currency || settings.general.default_currency || 'INR',
   });
 
   const [client, setClient] = useState<DocumentClient>({
-    company: existingQuote?.client_company || '',
-    contact_person: existingQuote?.client_name || '',
+    company: existingQuote?.client_company || (existingQuote as any)?.clientName || '',
+    contact_person: existingQuote?.client_name || (existingQuote as any)?.clientName || '',
     email: existingQuote?.client_email || '',
-    phone: '',
+    phone: (existingQuote as any)?.phone || '',
     address: existingQuote?.client_address || '',
     gstin: existingQuote?.client_gstin || '',
   });
 
   const [items, setItems] = useState<DocumentItem[]>(() => {
     if (existingQuote?.items && existingQuote.items.length > 0) {
-      return existingQuote.items.map((item, idx) => ({
-        id: item.item_id || crypto.randomUUID(),
+      return existingQuote.items.map((item: any) => ({
+        id: item.item_id || item.id || crypto.randomUUID(),
         name: item.name || item.description || '',
         description: item.name ? (item.description || '') : '',
-        quantity: item.quantity,
-        unit: (item as { unit?: string }).unit || 'pcs',
-        unit_price: item.unit_price,
-        total: item.total,
+        quantity: item.quantity || 1,
+        unit: item.unit || 'pcs',
+        unit_price: item.unit_price ?? item.unitPrice ?? 0,
+        total: item.total ?? ((item.quantity || 1) * (item.unit_price ?? item.unitPrice ?? 0)),
       }));
     }
     return [createEmptyItem()];
   });
 
-  const [discountPercent, setDiscountPercent] = useState(existingQuote?.discount_percent || 0);
+  const [discountPercent, setDiscountPercent] = useState(
+    existingQuote?.discount_percent ?? (existingQuote as any)?.discount ?? 0
+  );
   const [taxCgst, setTaxCgst] = useState(existingQuote?.cgst_percent ?? settings.branding.tax_cgst ?? 0);
   const [taxSgst, setTaxSgst] = useState(existingQuote?.sgst_percent ?? settings.branding.tax_sgst ?? 0);
   const [taxIgst, setTaxIgst] = useState(existingQuote?.igst_percent ?? settings.branding.tax_igst ?? 0);
@@ -98,7 +104,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
     if (!existingQuote) {
       setMeta((prev) => ({
         ...prev,
-        currency: settings.general.default_currency || 'USD',
+        currency: settings.general.default_currency || 'INR',
       }));
       setNotes((prev) => ({
         ...prev,
@@ -118,7 +124,8 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
   const handleSave = useCallback(
     async (status?: QuotationStatus) => {
-      if (!client.company && !client.contact_person) {
+      const clientDisplayName = client.company || client.contact_person;
+      if (!clientDisplayName) {
         toast.error('Client name or company is required');
         return;
       }
@@ -132,9 +139,19 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
       }
 
       try {
+        const titleCaseStatus =
+          finalStatus === 'accepted' ? 'Accepted' :
+          finalStatus === 'rejected' ? 'Rejected' :
+          finalStatus === 'sent' ? 'Sent' : 'Draft';
+
         const quotationData = {
           quotation_number: meta.document_number,
-          client_id: '',
+          number: meta.document_number,
+          numberKey: meta.document_number.toLowerCase(),
+          clientId: (existingQuote as any)?.clientId || clientDisplayName,
+          clientName: clientDisplayName,
+          clientKey: clientDisplayName.toLowerCase(),
+          client_id: (existingQuote as any)?.clientId || clientDisplayName,
           client_name: client.contact_person,
           client_email: client.email,
           client_company: client.company,
@@ -143,6 +160,9 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           project_title: '',
           amount: pricing.grand_total,
           subtotal: pricing.subtotal,
+          tax: pricing.tax_amount,
+          discount: pricing.discount_amount,
+          total: pricing.grand_total,
           discount_percent: pricing.discount_percent,
           discount_amount: pricing.discount_amount,
           tax_amount: pricing.tax_amount,
@@ -150,8 +170,10 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           sgst_percent: pricing.sgst_percent,
           igst_percent: pricing.igst_percent,
           currency: meta.currency,
+          issueDate: meta.issue_date || new Date().toISOString().slice(0, 10),
+          validUntil: meta.valid_until ? meta.valid_until.slice(0, 10) : '',
           valid_until: meta.valid_until ? new Date(meta.valid_until).toISOString() : '',
-          status: finalStatus,
+          status: titleCaseStatus,
           description: '',
           notes: notes.notes,
           terms: notes.terms,
@@ -161,9 +183,10 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           items: items.map((item) => ({
             item_id: item.id,
             name: item.name,
-            description: item.description,
+            description: item.name ? (item.description ? `${item.name} - ${item.description}` : item.name) : item.description || '',
             quantity: item.quantity,
             unit: item.unit || 'pcs',
+            unitPrice: item.unit_price,
             unit_price: item.unit_price,
             total: item.total,
           })),
@@ -171,15 +194,6 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
         if (existingQuote) {
           await updateQuotation(existingQuote.id, quotationData);
-          // Event-driven automation: accepted → invoice (idempotent on backend).
-          if (existingQuote.status !== 'accepted' && finalStatus === 'accepted' && workspace?.id) {
-            try {
-              await backend.quotationAccepted(workspace.id, existingQuote.id);
-              toast.success('Invoice created from accepted quote');
-            } catch {
-              toast.error('Quote saved, but invoice automation failed');
-            }
-          }
           toast.success(finalStatus === 'draft' ? 'Quote updated' : 'Quote sent');
         } else {
           await createQuotation(quotationData);

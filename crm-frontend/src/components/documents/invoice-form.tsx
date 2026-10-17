@@ -38,20 +38,24 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   const [sending, setSending] = useState(false);
 
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingInvoice?.invoice_number || '',
-    status: existingInvoice?.status || 'pending',
-    issue_date: existingInvoice?.issue_date
+    document_number: existingInvoice?.invoice_number || (existingInvoice as any)?.number || '',
+    status: (existingInvoice?.status || 'unpaid').toLowerCase(),
+    issue_date: (existingInvoice as any)?.issueDate
+      ? (existingInvoice as any).issueDate
+      : existingInvoice?.issue_date
       ? new Date(existingInvoice.issue_date).toISOString().split('T')[0]
       : existingInvoice?.created_at
       ? new Date(existingInvoice.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
-    due_date: existingInvoice?.due_date || '',
-    currency: existingInvoice?.currency || settings.general.default_currency || 'USD',
+    due_date: (existingInvoice as any)?.dueDate
+      ? (existingInvoice as any).dueDate
+      : existingInvoice?.due_date || '',
+    currency: existingInvoice?.currency || settings.general.default_currency || 'INR',
   });
 
   const [client, setClient] = useState<DocumentClient>({
-    company: existingInvoice?.client_company || '',
-    contact_person: existingInvoice?.client_name || '',
+    company: existingInvoice?.client_company || (existingInvoice as any)?.clientName || '',
+    contact_person: existingInvoice?.client_name || (existingInvoice as any)?.clientName || '',
     email: existingInvoice?.client_email || '',
     phone: (existingInvoice as any)?.client_phone || (existingInvoice as any)?.phone || '',
     address: existingInvoice?.client_address || '',
@@ -60,27 +64,29 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
 
   const [items, setItems] = useState<DocumentItem[]>(() => {
     if (existingInvoice?.items && existingInvoice.items.length > 0) {
-      return existingInvoice.items.map((item) => ({
-        id: item.item_id || crypto.randomUUID(),
-        name: item.name || '',
-        description: item.description || '',
+      return existingInvoice.items.map((item: any) => ({
+        id: item.item_id || item.id || crypto.randomUUID(),
+        name: item.name || item.description || '',
+        description: item.name ? (item.description || '') : '',
         quantity: item.quantity || 1,
-        unit: (item as { unit?: string }).unit || 'pcs',
-        unit_price: item.unit_price || 0,
-        total: item.total || 0,
+        unit: item.unit || 'pcs',
+        unit_price: item.unit_price ?? item.unitPrice ?? 0,
+        total: item.total ?? ((item.quantity || 1) * (item.unit_price ?? item.unitPrice ?? 0)),
       }));
     }
     return [createEmptyItem()];
   });
 
-  const [discountPercent, setDiscountPercent] = useState(existingInvoice?.discount_percent || 0);
+  const [discountPercent, setDiscountPercent] = useState(
+    existingInvoice?.discount_percent ?? (existingInvoice as any)?.discount ?? 0
+  );
   const [taxCgst, setTaxCgst] = useState(existingInvoice?.cgst_percent ?? settings.branding.tax_cgst ?? 0);
   const [taxSgst, setTaxSgst] = useState(existingInvoice?.sgst_percent ?? settings.branding.tax_sgst ?? 0);
   const [taxIgst, setTaxIgst] = useState(existingInvoice?.igst_percent ?? settings.branding.tax_igst ?? 0);
 
   const [payment, setPayment] = useState<DocumentPayment>({
-    amount_paid: existingInvoice?.amount_paid ?? (existingInvoice?.paid_at ? existingInvoice.amount : 0),
-    balance_due: existingInvoice?.amount_due ?? 0,
+    amount_paid: existingInvoice?.amount_paid ?? (existingInvoice as any)?.amountPaid ?? (existingInvoice?.paid_at ? ((existingInvoice as any).total ?? existingInvoice.amount ?? 0) : 0),
+    balance_due: (existingInvoice as any)?.amount_due ?? 0,
     payment_date: existingInvoice?.paid_date || (existingInvoice?.paid_at
       ? new Date(existingInvoice.paid_at).toISOString().split('T')[0]
       : ''),
@@ -180,27 +186,45 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           finalStatus = existingInvoice.status;
         }
 
+        const titleCaseStatus =
+          finalStatus === 'paid' ? 'Paid' :
+          finalStatus === 'partially_paid' ? 'Partial' :
+          finalStatus === 'overdue' ? 'Overdue' : 'Unpaid';
+
+        const clientDisplayName = client.company || client.contact_person || 'Client';
+
         const invoiceData = {
           invoice_number: meta.document_number,
-          project_id: '',
-          client_id: '',
+          number: meta.document_number,
+          numberKey: meta.document_number.toLowerCase(),
+          clientId: (existingInvoice as any)?.clientId || clientDisplayName,
+          clientName: clientDisplayName,
+          clientKey: clientDisplayName.toLowerCase(),
+          client_id: (existingInvoice as any)?.clientId || clientDisplayName,
           client_name: client.contact_person,
           client_email: client.email,
           client_company: client.company,
           client_address: client.address,
           client_gstin: client.gstin,
           client_phone: client.phone,
-          currency: meta.currency || settings.general.default_currency || 'USD',
+          currency: meta.currency || settings.general.default_currency || 'INR',
           amount: pricing.grand_total,
+          total: pricing.grand_total,
           subtotal: pricing.subtotal,
+          tax: pricing.tax_amount,
+          discount: pricing.discount_amount,
+          amountPaid: payment.amount_paid,
+          amount_paid: payment.amount_paid,
           discount_percent: pricing.discount_percent,
           discount_amount: pricing.discount_amount,
           tax_amount: pricing.tax_amount,
           cgst_percent: pricing.cgst_percent,
           sgst_percent: pricing.sgst_percent,
           igst_percent: pricing.igst_percent,
+          issueDate: meta.issue_date || new Date().toISOString().slice(0, 10),
+          dueDate: meta.due_date || defaultDueDate(),
           due_date: meta.due_date || defaultDueDate(),
-          status: finalStatus,
+          status: titleCaseStatus,
           description: items[0]?.name || '',
           notes: notes.notes,
           terms: notes.terms,
@@ -208,7 +232,6 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           delivery_timeline: notes.delivery_timeline,
           payment_terms: payment.payment_terms,
           payment_method: payment.payment_method,
-          amount_paid: payment.amount_paid,
           paid_date: payment.payment_date || '',
           transaction_id: payment.transaction_id || '',
           custom_bank_name: payment.custom_bank_name || '',
@@ -219,9 +242,10 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           items: items.map((item) => ({
             item_id: item.id,
             name: item.name,
-            description: item.description,
+            description: item.name ? (item.description ? `${item.name} - ${item.description}` : item.name) : item.description || '',
             quantity: item.quantity,
             unit: item.unit || 'pcs',
+            unitPrice: item.unit_price,
             unit_price: item.unit_price,
             total: item.total,
             tax_rate: 0,
