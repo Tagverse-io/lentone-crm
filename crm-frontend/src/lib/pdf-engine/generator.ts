@@ -201,7 +201,7 @@ export async function generateQuotationPdf(
       const name = it.name || it.description || 'Item';
       const desc = it.name && it.description && it.description !== it.name ? `${it.name}\n${it.description}` : name;
       const qty = (it.quantity ?? 1).toString();
-      const unit = it.unit || '';
+      const unit = (it.unit && String(it.unit).trim()) || (it as any).unit_name || 'pcs';
       const price = Number(it.unit_price ?? it.unitPrice ?? 0);
       const total = Number(it.total ?? (price * (Number(it.quantity) || 1)));
       return [
@@ -231,9 +231,10 @@ export async function generateQuotationPdf(
     },
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
-      1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 35, halign: 'right' },
-      3: { cellWidth: 35, halign: 'right' },
+      1: { cellWidth: 18, halign: 'center' },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 32, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
@@ -431,7 +432,7 @@ export async function generateInvoicePdf(
           const name = it.name || it.description || 'Item';
           const desc = it.name && it.description && it.description !== it.name ? `${it.name}\n${it.description}` : name;
           const qty = (it.quantity ?? 1).toString();
-          const unit = it.unit || '';
+          const unit = (it.unit && String(it.unit).trim()) || (it as any).unit_name || 'pcs';
           const price = Number(it.unit_price ?? it.unitPrice ?? 0);
           const total = Number(it.total ?? (price * (Number(it.quantity) || 1)));
           return [
@@ -445,7 +446,7 @@ export async function generateInvoicePdf(
       : [[
           invoice.description || 'Professional Services',
           '1',
-          '',
+          'pcs',
           formatAmtS(invoice.amount || invoice.total || 0, fs),
           formatAmtS(invoice.amount || invoice.total || 0, fs),
         ]];
@@ -463,9 +464,10 @@ export async function generateInvoicePdf(
     bodyStyles: { lineWidth: { bottom: 0.2 }, lineColor: C_LINE },
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
-      1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 35, halign: 'right' },
-      3: { cellWidth: 35, halign: 'right' },
+      1: { cellWidth: 18, halign: 'center' },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 32, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
     },
     margin: { left: M, right: M },
   });

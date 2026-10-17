@@ -223,13 +223,14 @@ export default function QuotesPage() {
         total: q.total,
         issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),
         valid_until: q.validUntil,
-        items: (q.items ?? []).map((it) => ({
-          name: it.description || '',
-          description: '',
+        items: (q.items ?? []).map((it: any) => ({
+          name: it.description || it.name || '',
+          description: it.description || '',
           quantity: Number(it.quantity) || 1,
-          unit_price: Number(it.unitPrice) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
         })),
         notes: q.notes,
       };
@@ -263,13 +264,14 @@ export default function QuotesPage() {
         total: q.total,
         issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),
         valid_until: q.validUntil,
-        items: (q.items ?? []).map((it) => ({
-          name: it.description || '',
-          description: '',
+        items: (q.items ?? []).map((it: any) => ({
+          name: it.description || it.name || '',
+          description: it.description || '',
           quantity: Number(it.quantity) || 1,
-          unit_price: Number(it.unitPrice) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
         })),
         notes: q.notes,
       };

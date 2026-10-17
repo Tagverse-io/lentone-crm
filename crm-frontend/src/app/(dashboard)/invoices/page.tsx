@@ -180,13 +180,14 @@ export default function InvoicesPage() {
         amountPaid: inv.amountPaid || 0,
         issue_date: inv.issueDate ?? inv.createdAt?.slice(0, 10),
         due_date: inv.dueDate,
-        items: (inv.items ?? []).map((it) => ({
-          name: it.description || '',
-          description: '',
+        items: (inv.items ?? []).map((it: any) => ({
+          name: it.description || it.name || '',
+          description: it.description || '',
           quantity: Number(it.quantity) || 1,
-          unit_price: Number(it.unitPrice) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
         })),
         notes: inv.notes,
       };
@@ -222,13 +223,14 @@ export default function InvoicesPage() {
         amountPaid: inv.amountPaid || 0,
         issue_date: inv.issueDate ?? inv.createdAt?.slice(0, 10),
         due_date: inv.dueDate,
-        items: (inv.items ?? []).map((it) => ({
-          name: it.description || '',
-          description: '',
+        items: (inv.items ?? []).map((it: any) => ({
+          name: it.description || it.name || '',
+          description: it.description || '',
           quantity: Number(it.quantity) || 1,
-          unit_price: Number(it.unitPrice) || 0,
-          unitPrice: Number(it.unitPrice) || 0,
-          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
         })),
         notes: inv.notes,
       };

@@ -21,15 +21,22 @@ interface ItemsTableProps {
 }
 
 const FALLBACK_UNITS = [
-  { value: 'pcs', label: 'Pieces' },
+  { value: 'pcs', label: 'Pieces (pcs)' },
+  { value: 'piece', label: 'Piece' },
+  { value: 'can', label: 'Can' },
+  { value: 'bottle', label: 'Bottle' },
+  { value: 'box', label: 'Box' },
+  { value: 'boxes', label: 'Boxes' },
+  { value: 'packet', label: 'Packet' },
+  { value: 'bag', label: 'Bag' },
+  { value: 'kg', label: 'Kilograms (kg)' },
+  { value: 'L', label: 'Liters (L)' },
   { value: 'hrs', label: 'Hours' },
   { value: 'days', label: 'Days' },
   { value: 'mths', label: 'Months' },
   { value: 'sqft', label: 'Sq Ft' },
-  { value: 'kg', label: 'Kilograms' },
   { value: 'tons', label: 'Tons' },
   { value: 'sets', label: 'Sets' },
-  { value: 'boxes', label: 'Boxes' },
   { value: 'lot', label: 'Lot' },
   { value: 'flat', label: 'Flat Rate' },
   { value: 'project', label: 'Per Project' },
@@ -37,9 +44,6 @@ const FALLBACK_UNITS = [
 
 export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTableProps) {
   const { settings } = useWorkspace();
-  const unitOptions = units ?? settings?.general?.units ?? FALLBACK_UNITS.map((u) => u.value);
-  const fmt = useFmt();
-  const options = unitOptions.map((u) => ({ value: u, label: u }));
 
   // Inventory products for the "pick from inventory" select.
   const [products, setProducts] = useState<Product[]>([]);
@@ -50,6 +54,17 @@ export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTable
       .catch(() => undefined);
     return () => { alive = false; };
   }, []);
+
+  const baseUnits = units ?? settings?.general?.units ?? FALLBACK_UNITS.map((u) => u.value);
+  const itemUnits = items.map((i) => i.unit).filter(Boolean);
+  const prodUnits = products.map((p) => p.unit).filter(Boolean);
+  const allUnitValues = Array.from(new Set([...baseUnits, ...itemUnits, ...prodUnits, ...FALLBACK_UNITS.map((u) => u.value)]));
+  const options = allUnitValues.map((u) => {
+    const found = FALLBACK_UNITS.find((f) => f.value.toLowerCase() === u.toLowerCase());
+    return { value: u, label: found ? found.label : u };
+  });
+
+  const fmt = useFmt();
 
   const addItem = () => {
     onItemsChange([
@@ -86,7 +101,7 @@ export function ItemsTable({ items, onItemsChange, currency, units }: ItemsTable
           product_id: p.id,
           name: p.name,
           unit_price: p.price,
-          unit: unitOptions.includes(p.unit) ? p.unit : item.unit,
+          unit: p.unit || item.unit || 'pcs',
         };
         updated.total = calculateItemTotal(updated);
         return updated;

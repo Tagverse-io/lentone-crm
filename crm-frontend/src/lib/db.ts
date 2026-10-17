@@ -215,6 +215,7 @@ export interface QuotationLineItem {
   quantity: number;
   unitPrice: number;
   productId?: string;
+  unit?: string;
 }
 
 export const QUOTATION_STATUSES = ["Draft", "Sent", "Accepted", "Rejected"] as const;

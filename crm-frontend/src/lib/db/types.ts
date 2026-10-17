@@ -501,6 +501,7 @@ export interface QuotationItem {
   name?: string;
   description: string;
   quantity: number;
+  unit?: string;
   unit_price: number;
   total: number;
 }
@@ -1144,6 +1145,7 @@ export interface InvoiceItem {
   name?: string;
   description: string;
   quantity: number;
+  unit?: string;
   unit_price: number;
   total: number;
   tax_rate: number;

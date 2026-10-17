@@ -67,6 +67,7 @@ export function InvoiceCanvasRenderer({
             items: items.map(i => ({
               description: i.name + (i.description ? `\n${i.description}` : ''),
               quantity: i.quantity,
+              unit: i.unit || 'pcs',
               unit_price: i.unit_price,
               total: i.total,
             })),
@@ -94,6 +95,7 @@ export function InvoiceCanvasRenderer({
             items: items.map(i => ({
               description: i.name + (i.description ? `\n${i.description}` : ''),
               quantity: i.quantity,
+              unit: i.unit || 'pcs',
               unit_price: i.unit_price,
               total: i.total,
             })),
