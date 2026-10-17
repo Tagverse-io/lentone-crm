@@ -367,7 +367,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  companyName: "Lentone CRM",
+  companyName: "Lentone Foods Distribution",
   address: "",
   gstin: "",
   taxRate: 18,

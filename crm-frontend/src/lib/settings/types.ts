@@ -163,7 +163,7 @@ export type { DbTeamMember, DbApiKey };
 
 // ─── Default Settings ───────────────────────────────────────────────
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
-  company_name: 'Your Company',
+  company_name: 'Lentone Foods Distribution',
   workspace_name: 'My Workspace',
   workspace_url: '',
   legal_name: '',

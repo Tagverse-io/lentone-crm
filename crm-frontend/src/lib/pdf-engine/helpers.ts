@@ -3,7 +3,7 @@ import { getWorkspaceSettings } from '@/lib/settings/api';
 import { getSettings } from '@/lib/db';
 
 const DEFAULT_SETTINGS: CompanySettings = {
-  company_name: 'Your Company',
+  company_name: 'Lentone Foods Distribution',
   legal_name: 'Your Legal Name',
   tagline: 'Your Professional Solution Partner',
   address: '',
@@ -73,7 +73,7 @@ export async function getCompanySettings(workspaceId?: string): Promise<CompanyS
     // ignore
   }
 
-  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone CRM';
+  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone Foods Distribution';
   const primaryColor = appSettings?.primaryColor || workspace?.branding?.primary_color || '#2563eb';
   const currencySymbol = appSettings?.currency || workspace?.general?.currency_symbol || '₹';
   const defaultCurrency = currencySymbol === '₹' ? 'INR' : (currencySymbol || workspace?.general?.default_currency || 'INR');
