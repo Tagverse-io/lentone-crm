@@ -330,7 +330,7 @@ export default function SettingsPage() {
             {(['modern', 'corporate', 'minimal'] as const).map((style) => {
               const active = (form.templateStyle ?? 'modern') === style;
               const labels: Record<string, string> = { modern: 'Modern', corporate: 'Corporate', minimal: 'Minimal' };
-              const desc: Record<string, string> = { modern: 'Colored header, striped rows', corporate: 'Solid header, grid borders', minimal: 'Clean white header, subtle tones' };
+              const desc: Record<string, string> = { modern: 'Clean layout, dark titles, soft gray header', corporate: 'Solid brand header, grid borders', minimal: 'Same clean layout as Modern' };
               return (
                 <button
                   key={style}

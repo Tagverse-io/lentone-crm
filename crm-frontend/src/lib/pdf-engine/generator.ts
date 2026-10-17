@@ -107,7 +107,7 @@ export async function generateQuotationPdf(
   }
 
   // Right Title
-  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('QUOTATION', RX, M + 6, { align: 'right' });
 
@@ -124,7 +124,7 @@ export async function generateQuotationPdf(
   if (qValidUntil) {
     const d = new Date(qValidUntil);
     if (!isNaN(d.getTime())) {
-      doc.text(`Valid Until: ${formatDateS(qValidUntil, fs)}`, RX, yR, { align: 'right' }); yR += 5;
+      doc.text(`Valid Until: ${formatDateS(qValidUntil, fs)}`, RX, yR, { align: 'right' });
     }
   }
 
@@ -218,9 +218,8 @@ export async function generateQuotationPdf(
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
       1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: 35, halign: 'right' },
       3: { cellWidth: 35, halign: 'right' },
-      4: { cellWidth: 35, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
@@ -264,7 +263,7 @@ export async function generateQuotationPdf(
   doc.setFillColor(249, 250, 251);
   doc.rect(RX - 80, y - 6, 80, 12, 'F');
 
-  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK));
+  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
   doc.text('Total:', RX - 40, y + 2, { align: 'right' });
   const finalTotal = Number(quotation.amount ?? quotation.total ?? (subAfterDiscount + taxAmt));
   doc.text(formatAmtS(finalTotal, fs), RX - 4, y + 2, { align: 'right' });
@@ -345,7 +344,7 @@ export async function generateInvoicePdf(
     startY = M + 12;
   }
 
-  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('INVOICE', RX, M + 6, { align: 'right' });
 
@@ -451,9 +450,8 @@ export async function generateInvoicePdf(
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
       1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 20, halign: 'center' },
+      2: { cellWidth: 35, halign: 'right' },
       3: { cellWidth: 35, halign: 'right' },
-      4: { cellWidth: 35, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
@@ -507,7 +505,7 @@ export async function generateInvoicePdf(
   doc.setFillColor(249, 250, 251);
   doc.rect(RX - 80, y - 6, 80, 12, 'F');
 
-  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK));
+  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
   doc.text(amountPaid > 0 ? 'Balance Due:' : 'Total Due:', RX - 40, y + 2, { align: 'right' });
   doc.text(formatAmtS(amountPaid > 0 ? balanceDue : invTotal, fs), RX - 4, y + 2, { align: 'right' });
   y += 18;
@@ -598,7 +596,7 @@ export async function generateContractPdf(
     startY = M + 12;
   }
 
-  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('CONTRACT', RX, M + 6, { align: 'right' });
 
