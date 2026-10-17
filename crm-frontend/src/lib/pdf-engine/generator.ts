@@ -1,12 +1,12 @@
 // @ts-nocheck
 /**
- * PDF Generator — Strucureo CRM
+ * PDF Generator — Lentone CRM
  *
  * Direct jsPDF coordinate drawing + jspdf-autotable.
- * Minimal, Enterprise-grade aesthetic.
+ * Minimal, Enterprise-grade aesthetic matching tsk-crm with theme settings support.
  *
- * Currency: INR symbol ₹ is excluded from all text (jsPDF Helvetica can't render it).
- *           formatAmt() returns e.g. "INR 93.00" instead.
+ * Currency: INR symbol ₹ is excluded from raw font drawing (jsPDF standard Helvetica can't render it).
+ *           formatAmtS() safely returns e.g. "Rs. 93.00" or "INR 93.00".
  */
 
 import jsPDF from 'jspdf';
@@ -17,8 +17,8 @@ import type { Quotation, QuotationItem, Invoice, Contract, User, Project } from 
 import { formatMoney, formatDateS, resolveFormatSettings, type FormatSettings } from '@/lib/format';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const PW = 210;   // A4 width  mm
-const M  = 20;    // Margin    mm (20mm for professional enterprise look)
+const PW = 210;    // A4 width  mm
+const M  = 20;     // Margin    mm (20mm for professional enterprise look)
 const RX = PW - M; // Right-align x anchor
 
 // Colors
@@ -28,6 +28,13 @@ const C_LIGHT = [150, 150, 150] as [number, number, number];
 const C_LINE  = [230, 230, 230] as [number, number, number];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function hexToRgb(hex: string): [number, number, number] {
+  const clean = (hex || '#2563eb').replace('#', '');
+  const val = parseInt(clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean, 16);
+  if (isNaN(val)) return [37, 99, 235];
+  return [(val >> 16) & 255, (val >> 8) & 255, val & 255];
+}
 
 function fsFromCompany(s: CompanySettings, currency: string): FormatSettings {
   return resolveFormatSettings(
@@ -51,23 +58,13 @@ function formatAmtS(amount: number, fs: FormatSettings): string {
   return formatMoney(amount, { ...fs, symbol });
 }
 
-function formatAmt(amount: number, currency = 'INR'): string {
-  const n = amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const sym: Record<string, string> = {
-    USD: '$', EUR: 'EUR', GBP: 'GBP', INR: 'INR',
-    AUD: 'AUD', CAD: 'CAD', SGD: 'SGD',
-  };
-  const s = sym[currency.toUpperCase()] ?? currency;
-  return currency === 'USD' ? `${s}${n}` : `${s} ${n}`;
-}
-
 async function addLogo(doc: jsPDF, url: string | undefined | null): Promise<number> {
   if (!url) return M;
   try {
     const data = await getBase64ImageFromURL(url);
     // Draw logo at standard size (max 40x20)
-    doc.addImage(data, 'PNG', M, M, 35, 35 * 0.7); // Approximate aspect ratio, could be adjusted
-    return M + 28; // Return Y position after logo
+    doc.addImage(data, 'PNG', M, M, 35, 35 * 0.7);
+    return M + 28;
   } catch {
     return M;
   }
@@ -83,37 +80,51 @@ function drawDivider(doc: jsPDF, y: number) {
 
 export async function generateQuotationPdf(
   workspaceId: string,
-  quotation: Quotation,
-  client:    User | null
+  quotation: any,
+  client: User | null = null
 ): Promise<jsPDF> {
-  const s   = await getCompanySettings(workspaceId);
-  const cur = s.default_currency || 'INR';
+  const s = await getCompanySettings(workspaceId);
+  const cur = quotation.currency || s.default_currency || 'INR';
   const fs = fsFromCompany(s, cur);
+  const primaryRgb = hexToRgb(s.primary_color);
+  const style = s.template_style || 'modern';
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  // Corporate top accent bar
+  if (style === 'corporate') {
+    doc.setFillColor(...primaryRgb);
+    doc.rect(0, 0, PW, 4, 'F');
+  }
+
   // ── Header ─────────────────────────────────────────────────────────────────
   let startY = await addLogo(doc, s.logo_url);
-  
+
   if (!s.logo_url) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;
   }
 
   // Right Title
-  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('QUOTATION', RX, M + 6, { align: 'right' });
 
   // Right Meta
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   let yR = M + 14;
-  doc.text(`Reference: ${quotation.quotation_number}`, RX, yR, { align: 'right' }); yR += 5;
-  doc.text(`Date: ${formatDateS(quotation.created_at, fs)}`, RX, yR, { align: 'right' }); yR += 5;
-  if (quotation.valid_until) {
-    const d = new Date(quotation.valid_until);
+  const qNum = quotation.quotation_number || quotation.number || 'QUOTE-001';
+  doc.text(`Reference: ${qNum}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const qDate = quotation.issue_date || quotation.issueDate || quotation.created_at || quotation.createdAt || new Date().toISOString();
+  doc.text(`Date: ${formatDateS(qDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const qValidUntil = quotation.valid_until || quotation.validUntil;
+  if (qValidUntil) {
+    const d = new Date(qValidUntil);
     if (!isNaN(d.getTime())) {
-      doc.text(`Valid Until: ${formatDateS(quotation.valid_until, fs)}`, RX, yR, { align: 'right' });
+      doc.text(`Valid Until: ${formatDateS(qValidUntil, fs)}`, RX, yR, { align: 'right' }); yR += 5;
     }
   }
 
@@ -123,9 +134,9 @@ export async function generateQuotationPdf(
   // ── Addresses ──────────────────────────────────────────────────────────────
   let yL = topSectionY + 10;
   let yBT = topSectionY + 10;
-  
+
   // FROM
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('FROM', M, yL); yL += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
@@ -136,46 +147,58 @@ export async function generateQuotationPdf(
     const ls = doc.splitTextToSize(s.address, 80);
     doc.text(ls, M, yL); yL += ls.length * 4.5;
   }
-  if (s.email)   { doc.text(`Email: ${s.email}`, M, yL); yL += 4.5; }
-  if (s.phone)   { doc.text(`Phone: ${s.phone}`, M, yL); yL += 4.5; }
+  if (s.email) { doc.text(`Email: ${s.email}`, M, yL); yL += 4.5; }
+  if (s.phone) { doc.text(`Phone: ${s.phone}`, M, yL); yL += 4.5; }
   if (s.gst_number) { doc.text(`GSTIN: ${s.gst_number}`, M, yL); yL += 4.5; }
 
   // BILL TO
   const rightColX = 120;
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('BILL TO', rightColX, yBT); yBT += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
-  const clientName = quotation.client_name || client?.full_name || 'Client';
+  const clientName = quotation.client_name || quotation.clientName || client?.full_name || client?.name || 'Client';
   doc.text(clientName, rightColX, yBT); yBT += 5;
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-  if (quotation.client_company)  { doc.text(quotation.client_company, rightColX, yBT); yBT += 4.5; }
-  if (quotation.client_address)  { 
-    const ls = doc.splitTextToSize(quotation.client_address, 70);
-    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5; 
+  const cCompany = quotation.client_company || quotation.clientCompany;
+  if (cCompany) { doc.text(cCompany, rightColX, yBT); yBT += 4.5; }
+  const cAddress = quotation.client_address || quotation.clientAddress || (client as any)?.address;
+  if (cAddress) {
+    const ls = doc.splitTextToSize(cAddress, 70);
+    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5;
   }
-  const cEmail = quotation.client_email || client?.email;
+  const cEmail = quotation.client_email || quotation.clientEmail || client?.email;
   if (cEmail) { doc.text(`Email: ${cEmail}`, rightColX, yBT); yBT += 4.5; }
-  if (quotation.client_gstin) { doc.text(`GSTIN: ${quotation.client_gstin}`, rightColX, yBT); yBT += 4.5; }
+  const cGstin = quotation.client_gstin || quotation.clientGstin;
+  if (cGstin) { doc.text(`GSTIN: ${cGstin}`, rightColX, yBT); yBT += 4.5; }
 
   // ── Items Table ────────────────────────────────────────────────────────────
   const tableY = Math.max(yL, yBT) + 12;
+  const qItems = quotation.items && quotation.items.length > 0 ? quotation.items : [];
+
+  const tableHeadFill = style === 'corporate' ? primaryRgb : [249, 250, 251];
+  const tableHeadText = style === 'corporate' ? [255, 255, 255] : C_DARK;
 
   autoTable(doc, {
     startY: tableY,
     head: [['Description', 'Qty', 'Unit', 'Unit Price', 'Total']],
-    body: quotation.items.map((it: QuotationItem) => {
-      const desc = it.name ? `${it.name}${it.description ? `\n${it.description}` : ''}` : it.description;
+    body: qItems.map((it: any) => {
+      const name = it.name || it.description || 'Item';
+      const desc = it.name && it.description && it.description !== it.name ? `${it.name}\n${it.description}` : name;
+      const qty = (it.quantity ?? 1).toString();
+      const unit = it.unit || '';
+      const price = Number(it.unit_price ?? it.unitPrice ?? 0);
+      const total = Number(it.total ?? (price * (Number(it.quantity) || 1)));
       return [
         desc,
-        it.quantity.toString(),
-        it.unit || '',
-        formatAmtS(it.unit_price, fs),
-        formatAmtS(it.total, fs)
+        qty,
+        unit,
+        formatAmtS(price, fs),
+        formatAmtS(total, fs),
       ];
     }),
-    theme: 'plain',
+    theme: style === 'minimal' ? 'plain' : style === 'corporate' ? 'grid' : 'plain',
     styles: {
       font: 'helvetica',
       fontSize: 9,
@@ -183,8 +206,8 @@ export async function generateQuotationPdf(
       cellPadding: { top: 6, bottom: 6, left: 4, right: 4 },
     },
     headStyles: {
-      fillColor: [249, 250, 251],
-      textColor: C_DARK,
+      fillColor: tableHeadFill,
+      textColor: tableHeadText,
       fontStyle: 'bold',
       fontSize: 9,
     },
@@ -195,8 +218,9 @@ export async function generateQuotationPdf(
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
       1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 35, halign: 'right' },
+      2: { cellWidth: 20, halign: 'center' },
       3: { cellWidth: 35, halign: 'right' },
+      4: { cellWidth: 35, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
@@ -204,20 +228,23 @@ export async function generateQuotationPdf(
   let y = ((doc as any).lastAutoTable?.finalY ?? tableY + 40) + 8;
 
   // ── Totals ─────────────────────────────────────────────────────────────────
-  const sub = quotation.subtotal ?? quotation.items.reduce((a: number, i: QuotationItem) => a + i.total, 0);
+  const sub = Number(quotation.subtotal ?? (qItems.length > 0
+    ? qItems.reduce((a: number, i: any) => a + Number(i.total ?? ((Number(i.unit_price ?? i.unitPrice) || 0) * (Number(i.quantity) || 1))), 0)
+    : quotation.amount || quotation.total || 0));
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-  
+
   doc.text('Subtotal:', RX - 40, y, { align: 'right' });
   doc.text(formatAmtS(sub, fs), RX, y, { align: 'right' }); y += 6;
 
-  if (quotation.discount_amount) {
+  const discountAmt = Number(quotation.discount_amount ?? quotation.discount ?? 0);
+  if (discountAmt) {
     const dLabel = quotation.discount_percent ? `Discount (${quotation.discount_percent}%):` : 'Discount:';
     doc.text(dLabel, RX - 40, y, { align: 'right' });
-    doc.text(`- ${formatAmtS(quotation.discount_amount, fs)}`, RX, y, { align: 'right' }); y += 6;
+    doc.text(`- ${formatAmtS(discountAmt, fs)}`, RX, y, { align: 'right' }); y += 6;
   }
 
-  const subAfterDiscount = sub - (quotation.discount_amount || 0);
+  const subAfterDiscount = sub - discountAmt;
   const cP = quotation.cgst_percent ?? s.tax_cgst ?? 0;
   const sP = quotation.sgst_percent ?? s.tax_sgst ?? 0;
   const iP = quotation.igst_percent ?? s.tax_igst ?? 0;
@@ -225,28 +252,29 @@ export async function generateQuotationPdf(
   if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * cP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * sP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * iP / 100, fs), RX, y, { align: 'right' }); y += 6; }
-  
-  if (!cP && !sP && !iP && quotation.tax_amount) {
+
+  const taxAmt = Number(quotation.tax_amount ?? quotation.tax ?? 0);
+  if (!cP && !sP && !iP && taxAmt) {
     doc.text('Tax:', RX - 40, y, { align: 'right' });
-    doc.text(formatAmtS(quotation.tax_amount, fs), RX, y, { align: 'right' }); y += 6;
+    doc.text(formatAmtS(taxAmt, fs), RX, y, { align: 'right' }); y += 6;
   }
 
   // Grand Total Block
   y += 2;
   doc.setFillColor(249, 250, 251);
   doc.rect(RX - 80, y - 6, 80, 12, 'F');
-  
-  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+
+  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK));
   doc.text('Total:', RX - 40, y + 2, { align: 'right' });
-  doc.text(formatAmtS(quotation.amount, fs), RX - 4, y + 2, { align: 'right' });
+  const finalTotal = Number(quotation.amount ?? quotation.total ?? (subAfterDiscount + taxAmt));
+  doc.text(formatAmtS(finalTotal, fs), RX - 4, y + 2, { align: 'right' });
   y += 18;
 
   // ── Details (Notes, Terms, Bank) ──────────────────────────────────────────
-  
   const notes = quotation.notes || s.default_notes || '';
   if (notes) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Notes', M, y); y += 5;
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(notes, PW - 2 * M);
@@ -256,7 +284,7 @@ export async function generateQuotationPdf(
   const terms = quotation.terms || s.default_terms;
   if (terms) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Terms & Conditions', M, y); y += 5;
     doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(terms, PW - 2 * M);
@@ -265,7 +293,7 @@ export async function generateQuotationPdf(
 
   if (quotation.delivery_timeline) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Delivery Timeline', M, y); y += 5;
     doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(quotation.delivery_timeline, PW - 2 * M);
@@ -274,13 +302,13 @@ export async function generateQuotationPdf(
 
   if (s.bank_name || s.bank_account || s.upi_id) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Payment Details', M, y); y += 5;
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-    if (s.bank_name)    { doc.text(`Bank: ${s.bank_name}`, M, y); y += 4.5; }
+    if (s.bank_name) { doc.text(`Bank: ${s.bank_name}`, M, y); y += 4.5; }
     if (s.bank_account) { doc.text(`Account: ${s.bank_account}`, M, y); y += 4.5; }
-    if (s.bank_ifsc)    { doc.text(`IFSC: ${s.bank_ifsc}`, M, y); y += 4.5; }
-    if (s.upi_id)       { doc.text(`UPI: ${s.upi_id}`, M, y); y += 4.5; }
+    if (s.bank_ifsc) { doc.text(`IFSC: ${s.bank_ifsc}`, M, y); y += 4.5; }
+    if (s.upi_id) { doc.text(`UPI: ${s.upi_id}`, M, y); y += 4.5; }
   }
 
   addFooter(doc, s);
@@ -291,34 +319,47 @@ export async function generateQuotationPdf(
 
 export async function generateInvoicePdf(
   workspaceId: string,
-  invoice:  Invoice,
-  client:   User | null,
-  project:  Project | null
+  invoice: any,
+  client: User | null = null,
+  project: Project | null = null
 ): Promise<jsPDF> {
-  const s   = await getCompanySettings(workspaceId);
-  const cur = s.default_currency || 'INR';
+  const s = await getCompanySettings(workspaceId);
+  const cur = invoice.currency || s.default_currency || 'INR';
   const fs = fsFromCompany(s, cur);
+  const primaryRgb = hexToRgb(s.primary_color);
+  const style = s.template_style || 'modern';
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  // Corporate top accent bar
+  if (style === 'corporate') {
+    doc.setFillColor(...primaryRgb);
+    doc.rect(0, 0, PW, 4, 'F');
+  }
+
   let startY = await addLogo(doc, s.logo_url);
-  
+
   if (!s.logo_url) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;
   }
 
-  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('INVOICE', RX, M + 6, { align: 'right' });
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   let yR = M + 14;
-  doc.text(`Invoice #: ${invoice.invoice_number}`, RX, yR, { align: 'right' }); yR += 5;
-  const issueDate = invoice.issue_date || invoice.created_at;
+  const invNum = invoice.invoice_number || invoice.number || 'INV-001';
+  doc.text(`Invoice #: ${invNum}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const issueDate = invoice.issue_date || invoice.issueDate || invoice.created_at || invoice.createdAt || new Date().toISOString();
   doc.text(`Date: ${formatDateS(issueDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
-  if (invoice.due_date) {
-    doc.text(`Due Date: ${formatDateS(invoice.due_date, fs)}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const dueDate = invoice.due_date || invoice.dueDate;
+  if (dueDate) {
+    doc.text(`Due Date: ${formatDateS(dueDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
   }
 
   const topSectionY = Math.max(startY, yR) + 12;
@@ -327,9 +368,9 @@ export async function generateInvoicePdf(
   // Addresses
   let yL = topSectionY + 10;
   let yBT = topSectionY + 10;
-  
+
   // FROM
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('FROM', M, yL); yL += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
@@ -340,66 +381,79 @@ export async function generateInvoicePdf(
     const ls = doc.splitTextToSize(s.address, 80);
     doc.text(ls, M, yL); yL += ls.length * 4.5;
   }
-  if (s.email)   { doc.text(`Email: ${s.email}`, M, yL); yL += 4.5; }
-  if (s.phone)   { doc.text(`Phone: ${s.phone}`, M, yL); yL += 4.5; }
+  if (s.email) { doc.text(`Email: ${s.email}`, M, yL); yL += 4.5; }
+  if (s.phone) { doc.text(`Phone: ${s.phone}`, M, yL); yL += 4.5; }
   if (s.gst_number) { doc.text(`GSTIN: ${s.gst_number}`, M, yL); yL += 4.5; }
 
   // BILL TO
   const rightColX = 120;
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('BILL TO', rightColX, yBT); yBT += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
-  const clientName = invoice.client_name || client?.full_name || 'Client Name';
+  const clientName = invoice.client_name || invoice.clientName || client?.full_name || client?.name || 'Client Name';
   doc.text(clientName, rightColX, yBT); yBT += 5;
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-  if (invoice.client_company) { doc.text(invoice.client_company, rightColX, yBT); yBT += 4.5; }
-  if (invoice.client_address) { 
-    const ls = doc.splitTextToSize(invoice.client_address, 70);
-    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5; 
+  const cCompany = invoice.client_company || invoice.clientCompany;
+  if (cCompany) { doc.text(cCompany, rightColX, yBT); yBT += 4.5; }
+  const cAddress = invoice.client_address || invoice.clientAddress || (client as any)?.address;
+  if (cAddress) {
+    const ls = doc.splitTextToSize(cAddress, 70);
+    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5;
   }
-  const cEmail = invoice.client_email || client?.email;
-  if (cEmail)  { doc.text(`Email: ${cEmail}`, rightColX, yBT); yBT += 4.5; }
+  const cEmail = invoice.client_email || invoice.clientEmail || client?.email;
+  if (cEmail) { doc.text(`Email: ${cEmail}`, rightColX, yBT); yBT += 4.5; }
   if (project?.title) { doc.text(`Project: ${project.title}`, rightColX, yBT); yBT += 4.5; }
-  if (invoice.client_gstin) { doc.text(`GSTIN: ${invoice.client_gstin}`, rightColX, yBT); yBT += 4.5; }
+  const cGstin = invoice.client_gstin || invoice.clientGstin;
+  if (cGstin) { doc.text(`GSTIN: ${cGstin}`, rightColX, yBT); yBT += 4.5; }
 
   // Items
   const tableY = Math.max(yL, yBT) + 12;
 
+  const rawItems = invoice.items && invoice.items.length > 0 ? invoice.items : null;
   const rows: string[][] =
-    invoice.items && invoice.items.length > 0
-      ? invoice.items.map(it => {
-          const desc = it.name ? `${it.name}${it.description ? `\n${it.description}` : ''}` : it.description || 'Service';
+    rawItems
+      ? rawItems.map((it: any) => {
+          const name = it.name || it.description || 'Item';
+          const desc = it.name && it.description && it.description !== it.name ? `${it.name}\n${it.description}` : name;
+          const qty = (it.quantity ?? 1).toString();
+          const unit = it.unit || '';
+          const price = Number(it.unit_price ?? it.unitPrice ?? 0);
+          const total = Number(it.total ?? (price * (Number(it.quantity) || 1)));
           return [
             desc,
-            it.quantity.toString(),
-            it.unit || '',
-            formatAmtS(it.unit_price, fs),
-            formatAmtS(it.total, fs),
+            qty,
+            unit,
+            formatAmtS(price, fs),
+            formatAmtS(total, fs),
           ];
         })
       : [[
           invoice.description || 'Professional Services',
           '1',
           '',
-          formatAmtS(invoice.amount, fs),
-          formatAmtS(invoice.amount, fs),
+          formatAmtS(invoice.amount || invoice.total || 0, fs),
+          formatAmtS(invoice.amount || invoice.total || 0, fs),
         ]];
+
+  const tableHeadFill = style === 'corporate' ? primaryRgb : [249, 250, 251];
+  const tableHeadText = style === 'corporate' ? [255, 255, 255] : C_DARK;
 
   autoTable(doc, {
     startY: tableY,
     head: [['Description', 'Qty', 'Unit', 'Unit Price', 'Total']],
     body: rows,
-    theme: 'plain',
+    theme: style === 'minimal' ? 'plain' : style === 'corporate' ? 'grid' : 'plain',
     styles: { font: 'helvetica', fontSize: 9, textColor: C_GRAY, cellPadding: { top: 6, bottom: 6, left: 4, right: 4 } },
-    headStyles: { fillColor: [249, 250, 251], textColor: C_DARK, fontStyle: 'bold', fontSize: 9 },
+    headStyles: { fillColor: tableHeadFill, textColor: tableHeadText, fontStyle: 'bold', fontSize: 9 },
     bodyStyles: { lineWidth: { bottom: 0.2 }, lineColor: C_LINE },
     columnStyles: {
       0: { cellWidth: 'auto', halign: 'left' },
       1: { cellWidth: 20, halign: 'center' },
-      2: { cellWidth: 35, halign: 'right' },
+      2: { cellWidth: 20, halign: 'center' },
       3: { cellWidth: 35, halign: 'right' },
+      4: { cellWidth: 35, halign: 'right' },
     },
     margin: { left: M, right: M },
   });
@@ -407,22 +461,23 @@ export async function generateInvoicePdf(
   let y = ((doc as any).lastAutoTable?.finalY ?? tableY + 40) + 8;
 
   // Totals
-  const sub = invoice.subtotal ?? (invoice.items && invoice.items.length > 0
-    ? invoice.items.reduce((a, i) => a + i.total, 0)
-    : invoice.amount);
+  const sub = Number(invoice.subtotal ?? (rawItems
+    ? rawItems.reduce((a: number, i: any) => a + Number(i.total ?? ((Number(i.unit_price ?? i.unitPrice) || 0) * (Number(i.quantity) || 1))), 0)
+    : (invoice.amount || invoice.total || 0)));
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-  
+
   doc.text('Subtotal:', RX - 40, y, { align: 'right' });
   doc.text(formatAmtS(sub, fs), RX, y, { align: 'right' }); y += 6;
 
-  if (invoice.discount_amount) {
+  const discountAmt = Number(invoice.discount_amount ?? invoice.discount ?? 0);
+  if (discountAmt) {
     const dLabel = invoice.discount_percent ? `Discount (${invoice.discount_percent}%):` : 'Discount:';
     doc.text(dLabel, RX - 40, y, { align: 'right' });
-    doc.text(`- ${formatAmtS(invoice.discount_amount, fs)}`, RX, y, { align: 'right' }); y += 6;
+    doc.text(`- ${formatAmtS(discountAmt, fs)}`, RX, y, { align: 'right' }); y += 6;
   }
 
-  const subAfterDiscount = sub - (invoice.discount_amount || 0);
+  const subAfterDiscount = sub - discountAmt;
   const cP = invoice.cgst_percent ?? s.tax_cgst ?? 0;
   const sP = invoice.sgst_percent ?? s.tax_sgst ?? 0;
   const iP = invoice.igst_percent ?? s.tax_igst ?? 0;
@@ -430,15 +485,17 @@ export async function generateInvoicePdf(
   if (cP) { doc.text(`CGST (${cP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * cP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   if (sP) { doc.text(`SGST (${sP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * sP / 100, fs), RX, y, { align: 'right' }); y += 6; }
   if (iP) { doc.text(`IGST (${iP}%):`, RX - 40, y, { align: 'right' }); doc.text(formatAmtS(subAfterDiscount * iP / 100, fs), RX, y, { align: 'right' }); y += 6; }
-  
-  if (!cP && !sP && !iP && (invoice.tax_amount || invoice.tax)) {
+
+  const taxAmt = Number(invoice.tax_amount ?? invoice.tax ?? 0);
+  if (!cP && !sP && !iP && taxAmt) {
     doc.text('Tax:', RX - 40, y, { align: 'right' });
-    doc.text(formatAmtS(invoice.tax_amount || invoice.tax || 0, fs), RX, y, { align: 'right' }); y += 6;
+    doc.text(formatAmtS(taxAmt, fs), RX, y, { align: 'right' }); y += 6;
   }
 
-  const amountPaid = invoice.amount_paid || 0;
-  const balanceDue = Math.max(0, invoice.amount - amountPaid);
-  
+  const invTotal = Number(invoice.amount ?? invoice.total ?? (subAfterDiscount + taxAmt));
+  const amountPaid = Number(invoice.amount_paid ?? invoice.amountPaid ?? 0);
+  const balanceDue = Math.max(0, invTotal - amountPaid);
+
   if (amountPaid > 0) {
     doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     doc.text('Amount Paid:', RX - 40, y + 2, { align: 'right' });
@@ -449,17 +506,17 @@ export async function generateInvoicePdf(
   y += 2;
   doc.setFillColor(249, 250, 251);
   doc.rect(RX - 80, y - 6, 80, 12, 'F');
-  
-  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+
+  doc.setFontSize(11).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK));
   doc.text(amountPaid > 0 ? 'Balance Due:' : 'Total Due:', RX - 40, y + 2, { align: 'right' });
-  doc.text(formatAmtS(amountPaid > 0 ? balanceDue : invoice.amount, fs), RX - 4, y + 2, { align: 'right' });
+  doc.text(formatAmtS(amountPaid > 0 ? balanceDue : invTotal, fs), RX - 4, y + 2, { align: 'right' });
   y += 18;
 
   // Details
   const notes = invoice.notes || s.default_notes || '';
   if (notes) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Notes', M, y); y += 5;
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(notes, PW - 2 * M);
@@ -469,7 +526,7 @@ export async function generateInvoicePdf(
   const terms = invoice.terms || invoice.terms_and_conditions || s.default_terms || '';
   if (terms) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Terms & Conditions', M, y); y += 5;
     doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(terms, PW - 2 * M);
@@ -478,7 +535,7 @@ export async function generateInvoicePdf(
 
   if (invoice.delivery_timeline) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Delivery Timeline', M, y); y += 5;
     doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
     const ls = doc.splitTextToSize(invoice.delivery_timeline, PW - 2 * M);
@@ -492,17 +549,17 @@ export async function generateInvoicePdf(
 
   if (bankName || bankAcc || upiId || invoice.payment_method || invoice.payment_terms) {
     if (y > 250) { doc.addPage(); y = M; }
-    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text('Payment Details', M, y); y += 5;
     doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
-    
-    if (invoice.payment_terms) { 
-      const pt = invoice.payment_terms.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      doc.text(`Terms: ${pt}`, M, y); y += 4.5; 
+
+    if (invoice.payment_terms) {
+      const pt = invoice.payment_terms.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      doc.text(`Terms: ${pt}`, M, y); y += 4.5;
     }
-    if (invoice.payment_method) { 
-      const pm = invoice.payment_method.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      doc.text(`Method: ${pm}`, M, y); y += 4.5; 
+    if (invoice.payment_method) {
+      const pm = invoice.payment_method.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      doc.text(`Method: ${pm}`, M, y); y += 4.5;
     }
     if (invoice.transaction_id) { doc.text(`Transaction ID: ${invoice.transaction_id}`, M, y); y += 4.5; }
     if (bankName) { doc.text(`Bank: ${bankName}`, M, y); y += 4.5; }
@@ -520,21 +577,29 @@ export async function generateInvoicePdf(
 export async function generateContractPdf(
   contract: Contract
 ): Promise<jsPDF> {
-  const s   = await getCompanySettings();
+  const s = await getCompanySettings();
   const cur = s.default_currency || 'INR';
   const fs = fsFromCompany(s, cur);
+  const primaryRgb = hexToRgb(s.primary_color);
+  const style = s.template_style || 'modern';
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  if (style === 'corporate') {
+    doc.setFillColor(...primaryRgb);
+    doc.rect(0, 0, PW, 4, 'F');
+  }
+
   let startY = await addLogo(doc, s.logo_url);
-  
+
   if (!s.logo_url) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
     doc.text(s.company_name || 'Company', M, M + 5);
     startY = M + 12;
   }
 
-  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+  const titleColor = style === 'corporate' || style === 'modern' ? primaryRgb : C_DARK;
+  doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
   doc.text('CONTRACT', RX, M + 6, { align: 'right' });
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
@@ -548,9 +613,9 @@ export async function generateContractPdf(
   // Addresses
   let yL = topSectionY + 10;
   let yBT = topSectionY + 10;
-  
+
   // ISSUER
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('ISSUED BY', M, yL); yL += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
@@ -562,7 +627,7 @@ export async function generateContractPdf(
 
   // CLIENT
   const rightColX = 120;
-  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...C_LIGHT);
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
   doc.text('CLIENT PARTY', rightColX, yBT); yBT += 5;
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
@@ -570,9 +635,9 @@ export async function generateContractPdf(
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
   if (contract.client_email)   { doc.text(`Email: ${contract.client_email}`, rightColX, yBT); yBT += 4.5; }
-  if (contract.client_address) { 
+  if (contract.client_address) {
     const ls = doc.splitTextToSize(contract.client_address, 70);
-    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5; 
+    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5;
   }
 
   const tableY = Math.max(yL, yBT) + 12;
@@ -602,7 +667,7 @@ export async function generateContractPdf(
   });
 
   let y = ((doc as any).lastAutoTable?.finalY ?? tableY + 30) + 10;
-  
+
   doc.setFillColor(249, 250, 251);
   doc.rect(RX - 80, y - 6, 80, 12, 'F');
 
@@ -610,7 +675,6 @@ export async function generateContractPdf(
   doc.text('Contract Value:', RX - 40, y + 2, { align: 'right' });
   doc.text(contractValue, RX - 4, y + 2, { align: 'right' });
   y += 18;
-
 
   addFooter(doc, s);
   return doc;
@@ -620,11 +684,11 @@ export async function generateContractPdf(
 
 function addFooter(doc: jsPDF, s: any): void {
   const pages = doc.getNumberOfPages();
-  const text  = [s.company_name, s.website, s.email].filter(Boolean).join('  |  ');
-  
+  const text  = s.footer_text || [s.company_name, s.website, s.email].filter(Boolean).join('  |  ');
+
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
-    
+
     // Draw subtle line
     doc.setDrawColor(...C_LINE);
     doc.setLineWidth(0.3);
@@ -633,7 +697,7 @@ function addFooter(doc: jsPDF, s: any): void {
     // Footer text
     doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_LIGHT);
     doc.text(text, PW / 2, 285, { align: 'center' });
-    
+
     // Page numbers
     doc.text(`Page ${p} of ${pages}`, RX, 285, { align: 'right' });
   }
@@ -646,5 +710,10 @@ export async function downloadPdf(doc: jsPDF, filename: string): Promise<void> {
 }
 
 export async function openPdfPreview(doc: jsPDF): Promise<string> {
-  return doc.output('datauristring');
+  try {
+    const blob = doc.output('blob');
+    return URL.createObjectURL(blob);
+  } catch {
+    return doc.output('datauristring');
+  }
 }

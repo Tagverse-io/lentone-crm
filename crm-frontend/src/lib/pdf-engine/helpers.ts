@@ -1,5 +1,6 @@
 import { CompanySettings } from './types';
 import { getWorkspaceSettings } from '@/lib/settings/api';
+import { getSettings } from '@/lib/db';
 
 const DEFAULT_SETTINGS: CompanySettings = {
   company_name: 'Your Company',
@@ -23,15 +24,15 @@ const DEFAULT_SETTINGS: CompanySettings = {
   primary_color: '#2563eb',
   secondary_color: '#1e40af',
   accent_color: '#f59e0b',
-  default_currency: 'USD',
-  currency_symbol: '$',
+  default_currency: 'INR',
+  currency_symbol: '₹',
   currency_position: 'before',
   currency_decimals: 2,
-  number_format: '1,234.56',
-  date_format: 'MM/dd/yyyy',
-  timezone: 'UTC',
-  tax_cgst: 0,
-  tax_sgst: 0,
+  number_format: '12,34,567.89',
+  date_format: 'dd/MM/yyyy',
+  timezone: 'Asia/Kolkata',
+  tax_cgst: 9,
+  tax_sgst: 9,
   tax_igst: 0,
   tax_vat: 0,
   tax_tin: '',
@@ -53,63 +54,80 @@ let cachedSettings: CompanySettings | null = null;
 
 /**
  * Get company settings as a flat object (for PDF engine compatibility).
- * Reads from the new workspace settings API.
+ * Reads from both AppSettings (in db.ts) and the workspace settings API.
  */
-export async function getCompanySettings(workspaceId: string): Promise<CompanySettings> {
+export async function getCompanySettings(workspaceId?: string): Promise<CompanySettings> {
+  let appSettings: any = null;
   try {
-    const workspace = await getWorkspaceSettings(workspaceId);
-    return {
-      ...DEFAULT_SETTINGS,
-      company_name: workspace.general.company_name,
-      legal_name: workspace.general.legal_name,
-      tagline: workspace.general.tagline,
-      address: workspace.branding.address,
-      phone: workspace.branding.phone,
-      email: workspace.branding.email,
-      website: workspace.branding.website,
-      logo_url: workspace.branding.logo_url,
-      footer_logo_url: workspace.branding.footer_logo_url,
-      gst_number: workspace.branding.gst_number,
-      pan_number: workspace.branding.pan_number,
-      registration_number: workspace.branding.registration_number,
-      bank_name: workspace.branding.bank_name,
-      bank_account: workspace.branding.bank_account,
-      bank_ifsc: workspace.branding.bank_ifsc,
-      bank_swift: workspace.branding.bank_swift,
-      upi_id: workspace.branding.upi_id,
-      qr_code_url: workspace.branding.qr_code_url,
-      primary_color: workspace.branding.primary_color,
-      secondary_color: workspace.branding.secondary_color,
-      accent_color: workspace.branding.accent_color,
-      default_currency: workspace.general.default_currency,
-      currency_symbol: workspace.general.currency_symbol,
-      currency_position: workspace.general.currency_position ?? 'before',
-      currency_decimals: workspace.general.currency_decimals ?? 2,
-      number_format: workspace.general.number_format ?? '1,234.56',
-      date_format: workspace.branding.date_format,
-      timezone: workspace.general.timezone,
-      tax_cgst: workspace.branding.tax_cgst,
-      tax_sgst: workspace.branding.tax_sgst,
-      tax_igst: workspace.branding.tax_igst,
-      tax_vat: workspace.branding.tax_vat,
-      tax_tin: workspace.branding.tax_tin,
-      default_terms: workspace.branding.default_terms,
-      default_notes: workspace.branding.default_notes,
-      footer_text: workspace.branding.footer_text,
-      watermark: workspace.branding.watermark,
-      invoice_prefix: workspace.branding.invoice_prefix,
-      quote_prefix: workspace.branding.quote_prefix,
-      purchase_order_prefix: workspace.branding.purchase_order_prefix,
-      invoice_number_format: workspace.branding.invoice_number_format,
-      quote_number_format: workspace.branding.quote_number_format,
-      template_style: workspace.branding.template_style,
-      social_links: workspace.branding.social_links,
-      support_contact: workspace.branding.support_contact,
-    };
+    appSettings = await getSettings();
   } catch (err) {
-    console.error('Error getting company settings:', err);
-    return DEFAULT_SETTINGS;
+    // ignore
   }
+
+  let workspace: any = null;
+  try {
+    if (workspaceId) {
+      workspace = await getWorkspaceSettings(workspaceId);
+    }
+  } catch (err) {
+    // ignore
+  }
+
+  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone CRM';
+  const primaryColor = appSettings?.primaryColor || workspace?.branding?.primary_color || '#2563eb';
+  const currencySymbol = appSettings?.currency || workspace?.general?.currency_symbol || '₹';
+  const defaultCurrency = currencySymbol === '₹' ? 'INR' : (currencySymbol || workspace?.general?.default_currency || 'INR');
+  const templateStyle = appSettings?.templateStyle || workspace?.branding?.template_style || 'modern';
+  const taxRate = typeof appSettings?.taxRate === 'number' ? appSettings.taxRate : 18;
+
+  return {
+    ...DEFAULT_SETTINGS,
+    company_name: companyName,
+    legal_name: workspace?.general?.legal_name || companyName,
+    tagline: workspace?.general?.tagline || 'Your Professional Solution Partner',
+    address: appSettings?.address || workspace?.branding?.address || '',
+    phone: appSettings?.companyPhone || workspace?.branding?.phone || '',
+    email: appSettings?.companyEmail || workspace?.branding?.email || '',
+    website: appSettings?.companyWebsite || workspace?.branding?.website || '',
+    logo_url: appSettings?.logo || workspace?.branding?.logo_url || '',
+    footer_logo_url: workspace?.branding?.footer_logo_url || '',
+    gst_number: appSettings?.gstin || workspace?.branding?.gst_number || '',
+    pan_number: workspace?.branding?.pan_number || '',
+    registration_number: workspace?.branding?.registration_number || '',
+    bank_name: appSettings?.bankName || workspace?.branding?.bank_name || '',
+    bank_account: appSettings?.bankAccount || workspace?.branding?.bank_account || '',
+    bank_ifsc: appSettings?.bankIfsc || workspace?.branding?.bank_ifsc || '',
+    bank_swift: workspace?.branding?.bank_swift || '',
+    upi_id: appSettings?.upiId || workspace?.branding?.upi_id || '',
+    qr_code_url: workspace?.branding?.qr_code_url || '',
+    primary_color: primaryColor,
+    secondary_color: workspace?.branding?.secondary_color || '#1e40af',
+    accent_color: workspace?.branding?.accent_color || '#f59e0b',
+    default_currency: defaultCurrency,
+    currency_symbol: currencySymbol,
+    currency_position: workspace?.general?.currency_position ?? 'before',
+    currency_decimals: workspace?.general?.currency_decimals ?? 2,
+    number_format: workspace?.general?.number_format ?? (currencySymbol === '₹' || defaultCurrency === 'INR' ? '12,34,567.89' : '1,234.56'),
+    date_format: workspace?.branding?.date_format || 'dd/MM/yyyy',
+    timezone: workspace?.general?.timezone || 'Asia/Kolkata',
+    tax_cgst: workspace?.branding?.tax_cgst || taxRate / 2,
+    tax_sgst: workspace?.branding?.tax_sgst || taxRate / 2,
+    tax_igst: workspace?.branding?.tax_igst || 0,
+    tax_vat: workspace?.branding?.tax_vat || 0,
+    tax_tin: workspace?.branding?.tax_tin || '',
+    default_terms: appSettings?.defaultTerms || workspace?.branding?.default_terms || '',
+    default_notes: appSettings?.defaultNotes || workspace?.branding?.default_notes || '',
+    footer_text: appSettings?.footerText || workspace?.branding?.footer_text || '',
+    watermark: workspace?.branding?.watermark || '',
+    invoice_prefix: appSettings?.invoicePrefix || workspace?.branding?.invoice_prefix || 'INV',
+    quote_prefix: appSettings?.quotationPrefix || workspace?.branding?.quote_prefix || 'QTE',
+    purchase_order_prefix: appSettings?.orderPrefix || workspace?.branding?.purchase_order_prefix || 'PO',
+    invoice_number_format: workspace?.branding?.invoice_number_format || '{prefix}-{year}-{num}',
+    quote_number_format: workspace?.branding?.quote_number_format || '{prefix}-{year}-{num}',
+    template_style: templateStyle,
+    social_links: workspace?.branding?.social_links || '',
+    support_contact: workspace?.branding?.support_contact || '',
+  };
 }
 
 export function clearSettingsCache(): void {

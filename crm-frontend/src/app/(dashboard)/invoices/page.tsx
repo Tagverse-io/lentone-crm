@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Download, FileText } from 'lucide-react';
+import { Download, Eye, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   INVOICE_STATUSES,
@@ -36,7 +36,7 @@ import {
 import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
 import { DataTable } from '@/components/ui/data-table';
 import { RecordPreview } from '@/components/record-preview';
-import { exportDocumentPdf } from '@/lib/pdf';
+import { generateInvoicePdf, downloadPdf as savePdf, openPdfPreview } from '@/lib/pdf-engine/generator';
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -157,37 +157,87 @@ export default function InvoicesPage() {
   };
 
   const downloadPdf = async (inv: Invoice) => {
+    const id = toast.loading('Generating PDF…');
     try {
       const billTo = await billToFor(inv);
-      exportDocumentPdf({
-        kind: 'INVOICE',
+      const invoicePayload = {
+        ...inv,
         number: inv.number,
-        issueDate: inv.issueDate ?? inv.createdAt.slice(0, 10),
-        dueDate: inv.dueDate,
-        status: inv.status,
-        settings: { ...({ companyName: 'Company', primaryColor: '#2563eb', templateStyle: 'modern', taxRate: 18, currency: '₹', invoicePrefix: 'INV', quotationPrefix: 'Q', orderPrefix: 'ORD', defaultRowsPerPage: 25, defaultTaskSlot: '10:00', lowStockThreshold: 10, workingHoursStart: '09:00', workingHoursEnd: '18:00', clientCategories: [], customFields: { clients: [], leads: [], products: [] } }), ...settings },
-        clientName: billTo?.name,
-        clientCompany: billTo?.name,
-        clientEmail: billTo?.email,
-        clientPhone: billTo?.phone,
+        invoice_number: inv.number,
+        client_name: billTo?.name || inv.clientName,
+        clientName: billTo?.name || inv.clientName,
+        client_company: billTo?.name || inv.clientName,
+        clientCompany: billTo?.name || inv.clientName,
+        client_address: billTo?.address,
         clientAddress: billTo?.address,
+        client_email: billTo?.email,
+        clientEmail: billTo?.email,
+        client_phone: billTo?.phone,
+        clientPhone: billTo?.phone,
+        amount: inv.total,
+        total: inv.total,
+        amount_paid: inv.amountPaid || 0,
+        amountPaid: inv.amountPaid || 0,
+        issue_date: inv.issueDate ?? inv.createdAt?.slice(0, 10),
+        due_date: inv.dueDate,
         items: (inv.items ?? []).map((it) => ({
-          description: it.description ?? '',
+          name: it.description || '',
+          description: '',
           quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unitPrice) || 0,
           unitPrice: Number(it.unitPrice) || 0,
           total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
         })),
-        subtotal: inv.subtotal,
-        tax: inv.tax,
-        discount: inv.discount,
-        total: inv.total,
-        amountPaid: inv.amountPaid,
-        outstanding: invoiceOutstanding(inv),
         notes: inv.notes,
-        currency,
-      });
+      };
+      const pdf = await generateInvoicePdf('', invoicePayload, null, null);
+      await savePdf(pdf, `Invoice-${inv.number}.pdf`);
+      toast.success('Invoice downloaded', { id });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF export failed');
+      toast.error('Failed to generate PDF', { id });
+    }
+  };
+
+  const previewPdf = async (inv: Invoice) => {
+    const id = toast.loading('Generating preview…');
+    try {
+      const billTo = await billToFor(inv);
+      const invoicePayload = {
+        ...inv,
+        number: inv.number,
+        invoice_number: inv.number,
+        client_name: billTo?.name || inv.clientName,
+        clientName: billTo?.name || inv.clientName,
+        client_company: billTo?.name || inv.clientName,
+        clientCompany: billTo?.name || inv.clientName,
+        client_address: billTo?.address,
+        clientAddress: billTo?.address,
+        client_email: billTo?.email,
+        clientEmail: billTo?.email,
+        client_phone: billTo?.phone,
+        clientPhone: billTo?.phone,
+        amount: inv.total,
+        total: inv.total,
+        amount_paid: inv.amountPaid || 0,
+        amountPaid: inv.amountPaid || 0,
+        issue_date: inv.issueDate ?? inv.createdAt?.slice(0, 10),
+        due_date: inv.dueDate,
+        items: (inv.items ?? []).map((it) => ({
+          name: it.description || '',
+          description: '',
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unitPrice) || 0,
+          unitPrice: Number(it.unitPrice) || 0,
+          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+        })),
+        notes: inv.notes,
+      };
+      const pdf = await generateInvoicePdf('', invoicePayload, null, null);
+      const url = await openPdfPreview(pdf);
+      window.open(url, '_blank');
+      toast.dismiss(id);
+    } catch (e) {
+      toast.error('Failed to generate preview', { id });
     }
   };
 
@@ -270,7 +320,10 @@ export default function InvoicesPage() {
                   <FileText size={16} />
                 </Button>
               </Link>
-              <Button variant="ghost" size="icon" title="Export PDF" aria-label="Export PDF" onClick={() => downloadPdf(inv)}>
+              <Button variant="ghost" size="icon" title="Preview PDF" aria-label="Preview PDF" onClick={() => previewPdf(inv)}>
+                <Eye size={16} />
+              </Button>
+              <Button variant="ghost" size="icon" title="Download PDF" aria-label="Download PDF" onClick={() => downloadPdf(inv)}>
                 <Download size={16} />
               </Button>
               {(inv.status === 'Unpaid' || inv.status === 'Partial') && (

@@ -284,40 +284,104 @@ function buildHtml(opts: PdfDocOptions): string {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
+import { generateInvoicePdf, generateQuotationPdf, downloadPdf } from '@/lib/pdf-engine/generator';
+
 /**
- * Opens the PDF document in a new tab and triggers the print dialog.
- * The user chooses "Save as PDF" in the print dialog.
+ * Directly generates and downloads a clean, themed PDF matching tsk-crm engine.
+ * No browser print dialog or popup required.
  */
-export function exportDocumentPdf(opts: PdfDocOptions): void {
-  const html = buildHtml(opts);
-  const win = window.open('', '_blank');
-  if (!win) {
-    alert('Pop-up was blocked. Please allow pop-ups for this site to export PDFs.');
-    return;
+export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
+  const isInvoice = opts.kind === 'INVOICE';
+  const filename = `${isInvoice ? 'Invoice' : 'Quotation'}-${opts.number || 'doc'}.pdf`;
+
+  if (isInvoice) {
+    const doc = await generateInvoicePdf('', {
+      number: opts.number,
+      invoice_number: opts.number,
+      issue_date: opts.issueDate,
+      issueDate: opts.issueDate,
+      due_date: opts.dueDate,
+      dueDate: opts.dueDate,
+      client_name: opts.clientName,
+      clientName: opts.clientName,
+      client_company: opts.clientCompany,
+      clientCompany: opts.clientCompany,
+      client_address: opts.clientAddress,
+      clientAddress: opts.clientAddress,
+      client_email: opts.clientEmail,
+      clientEmail: opts.clientEmail,
+      client_phone: opts.clientPhone,
+      clientPhone: opts.clientPhone,
+      items: opts.items.map((it) => ({
+        name: it.description,
+        description: '',
+        quantity: it.quantity,
+        unit_price: it.unitPrice,
+        unitPrice: it.unitPrice,
+        total: it.total,
+      })),
+      subtotal: opts.subtotal,
+      discount: opts.discount,
+      discount_amount: opts.discount,
+      tax: opts.tax,
+      tax_amount: opts.tax,
+      total: opts.total,
+      amount: opts.total,
+      amount_paid: opts.amountPaid,
+      amountPaid: opts.amountPaid,
+      notes: opts.notes,
+      terms: opts.terms,
+    });
+    await downloadPdf(doc, filename);
+  } else {
+    const doc = await generateQuotationPdf('', {
+      number: opts.number,
+      quotation_number: opts.number,
+      issue_date: opts.issueDate,
+      issueDate: opts.issueDate,
+      valid_until: opts.validUntil,
+      validUntil: opts.validUntil,
+      client_name: opts.clientName,
+      clientName: opts.clientName,
+      client_company: opts.clientCompany,
+      clientCompany: opts.clientCompany,
+      client_address: opts.clientAddress,
+      clientAddress: opts.clientAddress,
+      client_email: opts.clientEmail,
+      clientEmail: opts.clientEmail,
+      client_phone: opts.clientPhone,
+      clientPhone: opts.clientPhone,
+      items: opts.items.map((it) => ({
+        name: it.description,
+        description: '',
+        quantity: it.quantity,
+        unit_price: it.unitPrice,
+        unitPrice: it.unitPrice,
+        total: it.total,
+      })),
+      subtotal: opts.subtotal,
+      discount: opts.discount,
+      discount_amount: opts.discount,
+      tax: opts.tax,
+      tax_amount: opts.tax,
+      total: opts.total,
+      amount: opts.total,
+      notes: opts.notes,
+      terms: opts.terms,
+    });
+    await downloadPdf(doc, filename);
   }
-  win.document.write(html);
-  win.document.close();
-  // Wait for fonts/images to load, then print
-  win.addEventListener('load', () => {
-    setTimeout(() => {
-      win.print();
-    }, 600);
-  });
-  // Fallback if load doesn't fire (already loaded)
-  setTimeout(() => {
-    try { win.print(); } catch { /* already printed */ }
-  }, 1200);
 }
 
 // Legacy compat shim — old callers that pass partial opts
-export function exportSimplePdf(
+export async function exportSimplePdf(
   opts: Omit<PdfDocOptions, 'kind' | 'settings'> & {
     title?: string;
     status?: string;
     clientName?: string;
     settings?: AppSettings;
   },
-): void {
+): Promise<void> {
   const { title, settings: optsSettings, clientName, ...rest } = opts;
   const defaultSettings: AppSettings = {
     companyName: 'Company',
@@ -336,10 +400,11 @@ export function exportSimplePdf(
     clientCategories: [],
     customFields: { clients: [], leads: [], products: [] },
   };
-  exportDocumentPdf({
+  await exportDocumentPdf({
     kind: (title ?? '').toLowerCase().includes('invoice') ? 'INVOICE' : 'QUOTATION',
     settings: optsSettings ?? defaultSettings,
     clientName,
     ...rest,
   });
 }
+

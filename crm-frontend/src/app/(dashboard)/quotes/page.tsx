@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Download, FileCheck, FileText, Plus } from 'lucide-react';
+import { Download, Eye, FileCheck, FileText, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   QUOTATION_STATUSES,
@@ -39,7 +39,7 @@ import { POLL_FAST_MS, useAppSettings } from '@/lib/realtime';
 import { DataTable } from '@/components/ui/data-table';
 import { LineItemsEditor } from '@/components/line-items-editor';
 import { RecordPreview } from '@/components/record-preview';
-import { exportDocumentPdf } from '@/lib/pdf';
+import { generateQuotationPdf, downloadPdf as savePdf, openPdfPreview } from '@/lib/pdf-engine/generator';
 
 const EMPTY_ITEM: OrderLineItem = { description: '', quantity: 1, unitPrice: 0 };
 
@@ -202,35 +202,83 @@ export default function QuotesPage() {
   };
 
   const downloadPdf = async (q: Quotation) => {
+    const id = toast.loading('Generating PDF…');
     try {
       const billTo = await billToFor(q);
-      exportDocumentPdf({
-        kind: 'QUOTATION',
+      const quotePayload = {
+        ...q,
         number: q.number,
-        issueDate: q.issueDate ?? q.createdAt.slice(0, 10),
-        validUntil: q.validUntil,
-        status: q.status,
-        settings: { ...({ companyName: 'Company', primaryColor: '#2563eb', templateStyle: 'modern', taxRate: 18, currency: '₹', invoicePrefix: 'INV', quotationPrefix: 'Q', orderPrefix: 'ORD', defaultRowsPerPage: 25, defaultTaskSlot: '10:00', lowStockThreshold: 10, workingHoursStart: '09:00', workingHoursEnd: '18:00', clientCategories: [], customFields: { clients: [], leads: [], products: [] } }), ...settings },
-        clientName: billTo?.name,
-        clientCompany: billTo?.name,
-        clientEmail: billTo?.email,
-        clientPhone: billTo?.phone,
+        quotation_number: q.number,
+        client_name: billTo?.name || q.clientName,
+        clientName: billTo?.name || q.clientName,
+        client_company: billTo?.name || q.clientName,
+        clientCompany: billTo?.name || q.clientName,
+        client_address: billTo?.address,
         clientAddress: billTo?.address,
+        client_email: billTo?.email,
+        clientEmail: billTo?.email,
+        client_phone: billTo?.phone,
+        clientPhone: billTo?.phone,
+        amount: q.total,
+        total: q.total,
+        issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),
+        valid_until: q.validUntil,
         items: (q.items ?? []).map((it) => ({
-          description: it.description ?? '',
+          name: it.description || '',
+          description: '',
           quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unitPrice) || 0,
           unitPrice: Number(it.unitPrice) || 0,
           total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
         })),
-        subtotal: q.subtotal,
-        tax: q.tax,
-        discount: q.discount,
-        total: q.total,
         notes: q.notes,
-        currency,
-      });
+      };
+      const pdf = await generateQuotationPdf('', quotePayload, null);
+      await savePdf(pdf, `Quotation-${q.number}.pdf`);
+      toast.success('Quote downloaded', { id });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF export failed');
+      toast.error('Failed to generate PDF', { id });
+    }
+  };
+
+  const previewPdf = async (q: Quotation) => {
+    const id = toast.loading('Generating preview…');
+    try {
+      const billTo = await billToFor(q);
+      const quotePayload = {
+        ...q,
+        number: q.number,
+        quotation_number: q.number,
+        client_name: billTo?.name || q.clientName,
+        clientName: billTo?.name || q.clientName,
+        client_company: billTo?.name || q.clientName,
+        clientCompany: billTo?.name || q.clientName,
+        client_address: billTo?.address,
+        clientAddress: billTo?.address,
+        client_email: billTo?.email,
+        clientEmail: billTo?.email,
+        client_phone: billTo?.phone,
+        clientPhone: billTo?.phone,
+        amount: q.total,
+        total: q.total,
+        issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),
+        valid_until: q.validUntil,
+        items: (q.items ?? []).map((it) => ({
+          name: it.description || '',
+          description: '',
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unitPrice) || 0,
+          unitPrice: Number(it.unitPrice) || 0,
+          total: (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0),
+        })),
+        notes: q.notes,
+      };
+      const pdf = await generateQuotationPdf('', quotePayload, null);
+      const url = await openPdfPreview(pdf);
+      window.open(url, '_blank');
+      toast.dismiss(id);
+    } catch (e) {
+      toast.error('Failed to generate preview', { id });
     }
   };
 
@@ -280,7 +328,10 @@ export default function QuotesPage() {
                   <FileText size={16} />
                 </Button>
               </Link>
-              <Button variant="ghost" size="icon" title="Export PDF" aria-label="Export PDF" onClick={() => downloadPdf(q)}>
+              <Button variant="ghost" size="icon" title="Preview PDF" aria-label="Preview PDF" onClick={() => previewPdf(q)}>
+                <Eye size={16} />
+              </Button>
+              <Button variant="ghost" size="icon" title="Download PDF" aria-label="Download PDF" onClick={() => downloadPdf(q)}>
                 <Download size={16} />
               </Button>
               {q.status === 'Accepted' && (

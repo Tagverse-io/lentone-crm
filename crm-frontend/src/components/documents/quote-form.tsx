@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Send } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Save, Send } from 'lucide-react';
+import { generateQuotationPdf, downloadPdf as savePdf, openPdfPreview } from '@/lib/pdf-engine/generator';
 import { DocumentHeader } from './document-header';
 import { ClientSection } from './client-section';
 import { ItemsTable } from './items-table';
@@ -215,6 +216,113 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
     [meta, client, items, pricing, notes, existingQuote, router, workspace?.id]
   );
 
+  const handleDownloadPdf = async () => {
+    const id = toast.loading('Generating PDF…');
+    try {
+      const quotePayload = {
+        number: meta.document_number,
+        quotation_number: meta.document_number,
+        client_name: client.contact_person || client.company || 'Client',
+        clientName: client.contact_person || client.company || 'Client',
+        client_company: client.company,
+        clientCompany: client.company,
+        client_address: client.address,
+        clientAddress: client.address,
+        client_email: client.email,
+        clientEmail: client.email,
+        client_phone: client.phone,
+        clientPhone: client.phone,
+        client_gstin: client.gstin,
+        clientGstin: client.gstin,
+        currency: meta.currency,
+        amount: pricing.grand_total,
+        total: pricing.grand_total,
+        subtotal: pricing.subtotal,
+        tax: pricing.tax_amount,
+        tax_amount: pricing.tax_amount,
+        discount: pricing.discount_amount,
+        discount_amount: pricing.discount_amount,
+        discount_percent: pricing.discount_percent,
+        cgst_percent: pricing.cgst_percent,
+        sgst_percent: pricing.sgst_percent,
+        igst_percent: pricing.igst_percent,
+        issue_date: meta.issue_date,
+        valid_until: meta.valid_until,
+        notes: notes.notes,
+        terms: notes.terms,
+        delivery_timeline: notes.delivery_timeline,
+        items: items.map((item) => ({
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price,
+          unitPrice: item.unit_price,
+          total: item.total,
+        })),
+      };
+      const pdf = await generateQuotationPdf('', quotePayload, null);
+      await savePdf(pdf, `Quotation-${meta.document_number || 'draft'}.pdf`);
+      toast.success('Quote downloaded', { id });
+    } catch {
+      toast.error('Failed to generate PDF', { id });
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    const id = toast.loading('Generating preview…');
+    try {
+      const quotePayload = {
+        number: meta.document_number,
+        quotation_number: meta.document_number,
+        client_name: client.contact_person || client.company || 'Client',
+        clientName: client.contact_person || client.company || 'Client',
+        client_company: client.company,
+        clientCompany: client.company,
+        client_address: client.address,
+        clientAddress: client.address,
+        client_email: client.email,
+        clientEmail: client.email,
+        client_phone: client.phone,
+        clientPhone: client.phone,
+        client_gstin: client.gstin,
+        clientGstin: client.gstin,
+        currency: meta.currency,
+        amount: pricing.grand_total,
+        total: pricing.grand_total,
+        subtotal: pricing.subtotal,
+        tax: pricing.tax_amount,
+        tax_amount: pricing.tax_amount,
+        discount: pricing.discount_amount,
+        discount_amount: pricing.discount_amount,
+        discount_percent: pricing.discount_percent,
+        cgst_percent: pricing.cgst_percent,
+        sgst_percent: pricing.sgst_percent,
+        igst_percent: pricing.igst_percent,
+        issue_date: meta.issue_date,
+        valid_until: meta.valid_until,
+        notes: notes.notes,
+        terms: notes.terms,
+        delivery_timeline: notes.delivery_timeline,
+        items: items.map((item) => ({
+          name: item.name,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price,
+          unitPrice: item.unit_price,
+          total: item.total,
+        })),
+      };
+      const pdf = await generateQuotationPdf('', quotePayload, null);
+      const url = await openPdfPreview(pdf);
+      window.open(url, '_blank');
+      toast.dismiss(id);
+    } catch {
+      toast.error('Failed to generate preview', { id });
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Bar */}
@@ -231,12 +339,20 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => handleSave()} disabled={saving || sending}>
-            <Save className="h-4 w-4 mr-2" />
+          <Button variant="outline" size="sm" onClick={handlePreviewPdf}>
+            <Eye className="h-4 w-4 mr-1.5" />
+            Preview PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownloadPdf}>
+            <Download className="h-4 w-4 mr-1.5" />
+            Download PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => handleSave()} disabled={saving || sending}>
+            <Save className="h-4 w-4 mr-1.5" />
             {saving ? 'Saving...' : 'Save'}
           </Button>
-          <Button onClick={() => handleSave('sent')} disabled={saving || sending}>
-            <Send className="h-4 w-4 mr-2" />
+          <Button size="sm" onClick={() => handleSave('sent')} disabled={saving || sending}>
+            <Send className="h-4 w-4 mr-1.5" />
             {sending ? 'Sending...' : 'Send Quote'}
           </Button>
         </div>
