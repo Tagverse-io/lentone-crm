@@ -153,14 +153,19 @@ export default function ProformaInvoicesPage() {
   };
 
   const billToFor = async (pi: ProformaInvoice) => {
-    const c = clients.find((x) => x.id === pi.clientId) ?? (await getItem<Client>('clients', pi.clientId).catch(() => null));
+    const raw = pi as any;
+    const c = clients.find((x) => 
+      (x.id && x.id === pi.clientId) || 
+      (x.name && (x.name.toLowerCase() === (pi.clientName || '').toLowerCase() || x.name.toLowerCase() === (raw.client_company || '').toLowerCase()))
+    ) ?? (pi.clientId ? await getItem<Client>('clients', pi.clientId).catch(() => null) : null);
+
     return {
-      name: pi.clientName || c?.name,
-      company: c?.name || pi.clientName,
-      address: c?.address,
-      email: c?.email,
-      phone: c?.phone,
-      gstin: c?.gstin,
+      name: raw.client_name || raw.contact_person || raw.contactPerson || c?.contactPerson || c?.name || pi.clientName || '',
+      company: raw.client_company || raw.clientCompany || c?.name || pi.clientName || '',
+      address: raw.client_address || raw.clientAddress || raw.address || c?.address || '',
+      email: raw.client_email || raw.clientEmail || raw.email || c?.email || '',
+      phone: raw.client_phone || raw.clientPhone || raw.phone || c?.phone || '',
+      gstin: raw.client_gstin || raw.clientGstin || raw.gstin || c?.gstin || '',
     };
   };
 

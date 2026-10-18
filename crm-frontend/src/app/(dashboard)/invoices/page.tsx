@@ -161,14 +161,19 @@ export default function InvoicesPage() {
   };
 
   const billToFor = async (inv: Invoice) => {
-    const c = clients.find((x) => x.id === inv.clientId) ?? (await getItem<Client>('clients', inv.clientId).catch(() => null));
+    const raw = inv as any;
+    const c = clients.find((x) => 
+      (x.id && x.id === inv.clientId) || 
+      (x.name && (x.name.toLowerCase() === (inv.clientName || '').toLowerCase() || x.name.toLowerCase() === (raw.client_company || '').toLowerCase()))
+    ) ?? (inv.clientId ? await getItem<Client>('clients', inv.clientId).catch(() => null) : null);
+
     return {
-      name: inv.clientName || c?.name,
-      company: c?.name || inv.clientName,
-      address: c?.address,
-      email: c?.email,
-      phone: c?.phone,
-      gstin: c?.gstin,
+      name: raw.client_name || raw.contact_person || raw.contactPerson || c?.contactPerson || c?.name || inv.clientName || '',
+      company: raw.client_company || raw.clientCompany || c?.name || inv.clientName || '',
+      address: raw.client_address || raw.clientAddress || raw.address || c?.address || '',
+      email: raw.client_email || raw.clientEmail || raw.email || c?.email || '',
+      phone: raw.client_phone || raw.clientPhone || raw.phone || c?.phone || '',
+      gstin: raw.client_gstin || raw.clientGstin || raw.gstin || c?.gstin || '',
     };
   };
 
@@ -176,22 +181,23 @@ export default function InvoicesPage() {
     const id = toast.loading('Generating PDF…');
     try {
       const billTo = await billToFor(inv);
+      const raw = inv as any;
       const invoicePayload = {
         ...inv,
         number: inv.number,
         invoice_number: inv.number,
-        client_name: billTo?.name || inv.clientName,
-        clientName: billTo?.name || inv.clientName,
-        client_company: billTo?.company || billTo?.name || inv.clientName,
-        clientCompany: billTo?.company || billTo?.name || inv.clientName,
-        client_address: billTo?.address,
-        clientAddress: billTo?.address,
-        client_email: billTo?.email,
-        clientEmail: billTo?.email,
-        client_phone: billTo?.phone,
-        clientPhone: billTo?.phone,
-        client_gstin: billTo?.gstin,
-        clientGstin: billTo?.gstin,
+        client_name: billTo.name || raw.client_name || inv.clientName,
+        clientName: billTo.name || raw.client_name || inv.clientName,
+        client_company: billTo.company || raw.client_company || inv.clientName,
+        clientCompany: billTo.company || raw.client_company || inv.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
         amount: inv.total,
         total: inv.total,
         amount_paid: inv.amountPaid || 0,
@@ -221,22 +227,23 @@ export default function InvoicesPage() {
     const id = toast.loading('Generating preview…');
     try {
       const billTo = await billToFor(inv);
+      const raw = inv as any;
       const invoicePayload = {
         ...inv,
         number: inv.number,
         invoice_number: inv.number,
-        client_name: billTo?.name || inv.clientName,
-        clientName: billTo?.name || inv.clientName,
-        client_company: billTo?.company || billTo?.name || inv.clientName,
-        clientCompany: billTo?.company || billTo?.name || inv.clientName,
-        client_address: billTo?.address,
-        clientAddress: billTo?.address,
-        client_email: billTo?.email,
-        clientEmail: billTo?.email,
-        client_phone: billTo?.phone,
-        clientPhone: billTo?.phone,
-        client_gstin: billTo?.gstin,
-        clientGstin: billTo?.gstin,
+        client_name: billTo.name || raw.client_name || inv.clientName,
+        clientName: billTo.name || raw.client_name || inv.clientName,
+        client_company: billTo.company || raw.client_company || inv.clientName,
+        clientCompany: billTo.company || raw.client_company || inv.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
         amount: inv.total,
         total: inv.total,
         amount_paid: inv.amountPaid || 0,

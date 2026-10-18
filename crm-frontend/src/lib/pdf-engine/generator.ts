@@ -581,12 +581,12 @@ export async function generateInvoicePdf(
 
   // 2. FROM & BILL TO
   const clientInfo: ClientInfo = {
-    name: invoice.client_name || invoice.clientName || client?.full_name || client?.name || '',
-    company: invoice.client_company || invoice.clientCompany || (client as any)?.company || client?.name || '',
-    address: invoice.client_address || invoice.clientAddress || (client as any)?.address || '',
-    email: invoice.client_email || invoice.clientEmail || client?.email || '',
-    phone: invoice.client_phone || invoice.clientPhone || client?.phone || '',
-    gstin: invoice.client_gstin || invoice.clientGstin || (client as any)?.gstin || '',
+    name: invoice.client_name || invoice.contact_person || invoice.contactPerson || invoice.clientName || client?.contact_person || client?.contactPerson || client?.full_name || client?.name || '',
+    company: invoice.client_company || invoice.clientCompany || (client as any)?.company || client?.name || invoice.clientName || '',
+    address: invoice.client_address || invoice.clientAddress || (invoice as any)?.address || (client as any)?.client_address || (client as any)?.clientAddress || (client as any)?.address || '',
+    email: invoice.client_email || invoice.clientEmail || (invoice as any)?.email || (client as any)?.client_email || (client as any)?.clientEmail || client?.email || '',
+    phone: invoice.client_phone || invoice.clientPhone || (invoice as any)?.phone || (client as any)?.client_phone || (client as any)?.clientPhone || client?.phone || '',
+    gstin: invoice.client_gstin || invoice.clientGstin || (invoice as any)?.gstin || (client as any)?.client_gstin || (client as any)?.clientGstin || (client as any)?.gstin || '',
   };
   const tableStartY = drawFromAndBillTo(doc, s, clientInfo, headerBottomY, 'BILL TO');
 
@@ -615,23 +615,44 @@ export async function generateInvoicePdf(
   const discountPercent = invoice.discount_percent ? Number(invoice.discount_percent) : undefined;
   const subAfterDiscount = Math.max(0, subtotal - discountAmt);
 
-  const taxRate = typeof invoice.tax_rate === 'number' ? invoice.tax_rate : (s.tax_cgst + s.tax_sgst || 18);
+  const rawTax = invoice.tax_amount ?? invoice.tax;
+  const hasExplicitZeroTax = (typeof rawTax === 'number' && rawTax === 0)
+    || (invoice.tax_rate === 0)
+    || (invoice.cgst_percent === 0 && invoice.sgst_percent === 0 && invoice.igst_percent === 0);
+
   const isInterstate = Boolean(invoice.is_interstate || invoice.igst_percent);
 
+  let taxRate = 0;
   let cgstAmt = 0;
   let sgstAmt = 0;
   let igstAmt = 0;
 
-  if (isInterstate) {
-    igstAmt = Number(invoice.igst_amount ?? invoice.tax_amount ?? invoice.tax ?? (subAfterDiscount * taxRate / 100));
+  if (hasExplicitZeroTax) {
+    taxRate = 0;
+    cgstAmt = 0;
+    sgstAmt = 0;
+    igstAmt = 0;
   } else {
-    const halfRate = taxRate / 2;
-    const defaultHalfTax = (invoice.tax_amount ?? invoice.tax) ? Number(invoice.tax_amount ?? invoice.tax) / 2 : (subAfterDiscount * halfRate / 100);
-    cgstAmt = Number(invoice.cgst_amount ?? defaultHalfTax);
-    sgstAmt = Number(invoice.sgst_amount ?? defaultHalfTax);
+    taxRate = typeof invoice.tax_rate === 'number'
+      ? invoice.tax_rate
+      : (invoice.cgst_percent || invoice.sgst_percent)
+      ? (Number(invoice.cgst_percent) || 0) + (Number(invoice.sgst_percent) || 0)
+      : (typeof rawTax === 'number' && rawTax > 0 && subAfterDiscount > 0)
+      ? (rawTax / subAfterDiscount) * 100
+      : (s.tax_cgst + s.tax_sgst || 18);
+
+    if (isInterstate) {
+      igstAmt = Number(invoice.igst_amount ?? (typeof rawTax === 'number' ? rawTax : (subAfterDiscount * taxRate / 100)));
+    } else {
+      const halfRate = taxRate / 2;
+      const halfTax = typeof rawTax === 'number' && rawTax > 0 ? rawTax / 2 : (subAfterDiscount * halfRate / 100);
+      cgstAmt = Number(invoice.cgst_amount ?? halfTax);
+      sgstAmt = Number(invoice.sgst_amount ?? halfTax);
+    }
   }
 
-  const grandTotal = Number(invoice.amount ?? invoice.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
+  const calcTotal = subAfterDiscount + cgstAmt + sgstAmt + igstAmt;
+  const grandTotal = calcTotal > 0 ? calcTotal : Number(invoice.amount ?? invoice.total ?? 0);
   const amountPaid = Number(invoice.amount_paid ?? invoice.amountPaid ?? 0);
   const balanceDue = Math.max(0, grandTotal - amountPaid);
 
@@ -699,12 +720,12 @@ export async function generateQuotationPdf(
 
   // 2. FROM & BILL TO / QUOTE TO
   const clientInfo: ClientInfo = {
-    name: quotation.client_name || quotation.clientName || client?.full_name || client?.name || '',
-    company: quotation.client_company || quotation.clientCompany || (client as any)?.company || client?.name || '',
-    address: quotation.client_address || quotation.clientAddress || (client as any)?.address || '',
-    email: quotation.client_email || quotation.clientEmail || client?.email || '',
-    phone: quotation.client_phone || quotation.clientPhone || client?.phone || '',
-    gstin: quotation.client_gstin || quotation.clientGstin || (client as any)?.gstin || '',
+    name: quotation.client_name || quotation.contact_person || quotation.contactPerson || quotation.clientName || client?.contact_person || client?.contactPerson || client?.full_name || client?.name || '',
+    company: quotation.client_company || quotation.clientCompany || (client as any)?.company || client?.name || quotation.clientName || '',
+    address: quotation.client_address || quotation.clientAddress || (quotation as any)?.address || (client as any)?.client_address || (client as any)?.clientAddress || (client as any)?.address || '',
+    email: quotation.client_email || quotation.clientEmail || (quotation as any)?.email || (client as any)?.client_email || (client as any)?.clientEmail || client?.email || '',
+    phone: quotation.client_phone || quotation.clientPhone || (quotation as any)?.phone || (client as any)?.client_phone || (client as any)?.clientPhone || client?.phone || '',
+    gstin: quotation.client_gstin || quotation.clientGstin || (quotation as any)?.gstin || (client as any)?.client_gstin || (client as any)?.clientGstin || (client as any)?.gstin || '',
   };
   const tableStartY = drawFromAndBillTo(doc, s, clientInfo, headerBottomY, 'BILL TO');
 
@@ -733,23 +754,44 @@ export async function generateQuotationPdf(
   const discountPercent = quotation.discount_percent ? Number(quotation.discount_percent) : undefined;
   const subAfterDiscount = Math.max(0, subtotal - discountAmt);
 
-  const taxRate = typeof quotation.tax_rate === 'number' ? quotation.tax_rate : (s.tax_cgst + s.tax_sgst || 18);
+  const rawTax = quotation.tax_amount ?? quotation.tax;
+  const hasExplicitZeroTax = (typeof rawTax === 'number' && rawTax === 0)
+    || (quotation.tax_rate === 0)
+    || (quotation.cgst_percent === 0 && quotation.sgst_percent === 0 && quotation.igst_percent === 0);
+
   const isInterstate = Boolean(quotation.is_interstate || quotation.igst_percent);
 
+  let taxRate = 0;
   let cgstAmt = 0;
   let sgstAmt = 0;
   let igstAmt = 0;
 
-  if (isInterstate) {
-    igstAmt = Number(quotation.igst_amount ?? quotation.tax_amount ?? quotation.tax ?? (subAfterDiscount * taxRate / 100));
+  if (hasExplicitZeroTax) {
+    taxRate = 0;
+    cgstAmt = 0;
+    sgstAmt = 0;
+    igstAmt = 0;
   } else {
-    const halfRate = taxRate / 2;
-    const defaultHalfTax = (quotation.tax_amount ?? quotation.tax) ? Number(quotation.tax_amount ?? quotation.tax) / 2 : (subAfterDiscount * halfRate / 100);
-    cgstAmt = Number(quotation.cgst_amount ?? defaultHalfTax);
-    sgstAmt = Number(quotation.sgst_amount ?? defaultHalfTax);
+    taxRate = typeof quotation.tax_rate === 'number'
+      ? quotation.tax_rate
+      : (quotation.cgst_percent || quotation.sgst_percent)
+      ? (Number(quotation.cgst_percent) || 0) + (Number(quotation.sgst_percent) || 0)
+      : (typeof rawTax === 'number' && rawTax > 0 && subAfterDiscount > 0)
+      ? (rawTax / subAfterDiscount) * 100
+      : (s.tax_cgst + s.tax_sgst || 18);
+
+    if (isInterstate) {
+      igstAmt = Number(quotation.igst_amount ?? (typeof rawTax === 'number' ? rawTax : (subAfterDiscount * taxRate / 100)));
+    } else {
+      const halfRate = taxRate / 2;
+      const halfTax = typeof rawTax === 'number' && rawTax > 0 ? rawTax / 2 : (subAfterDiscount * halfRate / 100);
+      cgstAmt = Number(quotation.cgst_amount ?? halfTax);
+      sgstAmt = Number(quotation.sgst_amount ?? halfTax);
+    }
   }
 
-  const grandTotal = Number(quotation.amount ?? quotation.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
+  const calcTotal = subAfterDiscount + cgstAmt + sgstAmt + igstAmt;
+  const grandTotal = calcTotal > 0 ? calcTotal : Number(quotation.amount ?? quotation.total ?? 0);
 
   // 5. Totals
   drawTotals(
@@ -813,12 +855,12 @@ export async function generateProformaInvoicePdf(
 
   // 2. FROM & BILL TO
   const clientInfo: ClientInfo = {
-    name: proforma.clientName || proforma.client_name || client?.full_name || client?.name || '',
-    company: proforma.clientCompany || proforma.client_company || (client as any)?.company || client?.name || '',
-    address: proforma.clientAddress || proforma.client_address || (client as any)?.address || '',
-    email: proforma.clientEmail || proforma.client_email || client?.email || '',
-    phone: proforma.clientPhone || proforma.client_phone || client?.phone || '',
-    gstin: proforma.clientGstin || proforma.client_gstin || (client as any)?.gstin || '',
+    name: proforma.client_name || proforma.contact_person || proforma.contactPerson || proforma.clientName || client?.contact_person || client?.contactPerson || client?.full_name || client?.name || '',
+    company: proforma.client_company || proforma.clientCompany || (client as any)?.company || client?.name || proforma.clientName || '',
+    address: proforma.client_address || proforma.clientAddress || (proforma as any)?.address || (client as any)?.client_address || (client as any)?.clientAddress || (client as any)?.address || '',
+    email: proforma.client_email || proforma.clientEmail || (proforma as any)?.email || (client as any)?.client_email || (client as any)?.clientEmail || client?.email || '',
+    phone: proforma.client_phone || proforma.clientPhone || (proforma as any)?.phone || (client as any)?.client_phone || (client as any)?.clientPhone || client?.phone || '',
+    gstin: proforma.client_gstin || proforma.clientGstin || (proforma as any)?.gstin || (client as any)?.client_gstin || (client as any)?.clientGstin || (client as any)?.gstin || '',
   };
   const tableStartY = drawFromAndBillTo(doc, s, clientInfo, headerBottomY, 'BILL TO');
 
@@ -847,23 +889,44 @@ export async function generateProformaInvoicePdf(
   const discountPercent = proforma.discount_percent ? Number(proforma.discount_percent) : undefined;
   const subAfterDiscount = Math.max(0, subtotal - discountAmt);
 
-  const taxRate = typeof proforma.tax_rate === 'number' ? proforma.tax_rate : (s.tax_cgst + s.tax_sgst || 18);
+  const rawTax = proforma.tax_amount ?? proforma.tax;
+  const hasExplicitZeroTax = (typeof rawTax === 'number' && rawTax === 0)
+    || (proforma.tax_rate === 0)
+    || (proforma.cgst_percent === 0 && proforma.sgst_percent === 0 && proforma.igst_percent === 0);
+
   const isInterstate = Boolean(proforma.is_interstate || proforma.igst_percent);
 
+  let taxRate = 0;
   let cgstAmt = 0;
   let sgstAmt = 0;
   let igstAmt = 0;
 
-  if (isInterstate) {
-    igstAmt = Number(proforma.igst_amount ?? proforma.tax_amount ?? proforma.tax ?? (subAfterDiscount * taxRate / 100));
+  if (hasExplicitZeroTax) {
+    taxRate = 0;
+    cgstAmt = 0;
+    sgstAmt = 0;
+    igstAmt = 0;
   } else {
-    const halfRate = taxRate / 2;
-    const defaultHalfTax = (proforma.tax_amount ?? proforma.tax) ? Number(proforma.tax_amount ?? proforma.tax) / 2 : (subAfterDiscount * halfRate / 100);
-    cgstAmt = Number(proforma.cgst_amount ?? defaultHalfTax);
-    sgstAmt = Number(proforma.sgst_amount ?? defaultHalfTax);
+    taxRate = typeof proforma.tax_rate === 'number'
+      ? proforma.tax_rate
+      : (proforma.cgst_percent || proforma.sgst_percent)
+      ? (Number(proforma.cgst_percent) || 0) + (Number(proforma.sgst_percent) || 0)
+      : (typeof rawTax === 'number' && rawTax > 0 && subAfterDiscount > 0)
+      ? (rawTax / subAfterDiscount) * 100
+      : (s.tax_cgst + s.tax_sgst || 18);
+
+    if (isInterstate) {
+      igstAmt = Number(proforma.igst_amount ?? (typeof rawTax === 'number' ? rawTax : (subAfterDiscount * taxRate / 100)));
+    } else {
+      const halfRate = taxRate / 2;
+      const halfTax = typeof rawTax === 'number' && rawTax > 0 ? rawTax / 2 : (subAfterDiscount * halfRate / 100);
+      cgstAmt = Number(proforma.cgst_amount ?? halfTax);
+      sgstAmt = Number(proforma.sgst_amount ?? halfTax);
+    }
   }
 
-  const grandTotal = Number(proforma.amount ?? proforma.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
+  const calcTotal = subAfterDiscount + cgstAmt + sgstAmt + igstAmt;
+  const grandTotal = calcTotal > 0 ? calcTotal : Number(proforma.amount ?? proforma.total ?? 0);
 
   // 5. Totals
   drawTotals(

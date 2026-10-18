@@ -14,6 +14,7 @@ import { PaymentSection } from './payment-section';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { getCollection, getItem, createItem, updateItem, nameKeyOf, type Client } from '@/lib/db';
 import type { Invoice, InvoiceStatus } from '@/lib/db/types';
 import type {
   DocumentMeta,
@@ -42,30 +43,57 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
+  const rawInv = existingInvoice as any;
+
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingInvoice?.invoice_number || (existingInvoice as any)?.number || '',
+    document_number: existingInvoice?.invoice_number || rawInv?.number || '',
     status: (existingInvoice?.status || 'unpaid').toLowerCase(),
-    issue_date: (existingInvoice as any)?.issueDate
-      ? (existingInvoice as any).issueDate
+    issue_date: rawInv?.issueDate
+      ? rawInv.issueDate
       : existingInvoice?.issue_date
       ? new Date(existingInvoice.issue_date).toISOString().split('T')[0]
       : existingInvoice?.created_at
       ? new Date(existingInvoice.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
-    due_date: (existingInvoice as any)?.dueDate
-      ? (existingInvoice as any).dueDate
+    due_date: rawInv?.dueDate
+      ? rawInv.dueDate
       : existingInvoice?.due_date || '',
     currency: existingInvoice?.currency || settings.general.default_currency || 'INR',
   });
 
   const [client, setClient] = useState<DocumentClient>({
-    company: existingInvoice?.client_company || (existingInvoice as any)?.clientName || '',
-    contact_person: existingInvoice?.client_name || (existingInvoice as any)?.clientName || '',
-    email: existingInvoice?.client_email || '',
-    phone: (existingInvoice as any)?.client_phone || (existingInvoice as any)?.phone || '',
-    address: existingInvoice?.client_address || '',
-    gstin: existingInvoice?.client_gstin || '',
+    company: existingInvoice?.client_company || rawInv?.clientCompany || rawInv?.company || rawInv?.clientName || '',
+    contact_person: existingInvoice?.client_name || rawInv?.contact_person || rawInv?.contactPerson || rawInv?.clientName || '',
+    email: existingInvoice?.client_email || rawInv?.clientEmail || rawInv?.email || '',
+    phone: rawInv?.client_phone || rawInv?.clientPhone || rawInv?.phone || '',
+    address: existingInvoice?.client_address || rawInv?.clientAddress || rawInv?.address || '',
+    gstin: existingInvoice?.client_gstin || rawInv?.clientGstin || rawInv?.gstin || '',
   });
+
+  // Hydrate client details from clients collection if missing
+  useEffect(() => {
+    if (!existingInvoice) return;
+    const cid = rawInv?.clientId;
+    const cname = rawInv?.clientName || existingInvoice.client_company;
+    (async () => {
+      let matched: Client | null = null;
+      if (cid) matched = await getItem<Client>('clients', cid).catch(() => null);
+      if (!matched && cname) {
+        const list = await getCollection<Client>('clients').catch(() => []);
+        matched = list.find((c) => c.name?.toLowerCase() === cname.toLowerCase()) || null;
+      }
+      if (matched) {
+        setClient((prev) => ({
+          company: prev.company || matched?.name || '',
+          contact_person: prev.contact_person || matched?.contactPerson || matched?.name || '',
+          email: prev.email || matched?.email || '',
+          phone: prev.phone || matched?.phone || '',
+          address: prev.address || matched?.address || '',
+          gstin: prev.gstin || matched?.gstin || '',
+        }));
+      }
+    })();
+  }, [existingInvoice]);
 
   const [items, setItems] = useState<DocumentItem[]>(() => {
     if (existingInvoice?.items && existingInvoice.items.length > 0) {
@@ -214,10 +242,15 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           client_id: (existingInvoice as any)?.clientId || clientDisplayName,
           client_name: client.contact_person,
           client_email: client.email,
+          clientEmail: client.email,
           client_company: client.company,
+          clientCompany: client.company,
           client_address: client.address,
+          clientAddress: client.address,
           client_gstin: client.gstin,
+          clientGstin: client.gstin,
           client_phone: client.phone,
+          clientPhone: client.phone,
           currency: meta.currency || settings.general.default_currency || 'INR',
           amount: pricing.grand_total,
           total: pricing.grand_total,
@@ -263,6 +296,40 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
             tax_rate: 0,
           })),
         };
+
+        // Sync/upsert client to clients collection so details persist across CRM
+        const clientCompany = client.company || client.contact_person;
+        if (clientCompany) {
+          try {
+            const allClients = await getCollection<Client>('clients').catch(() => []);
+            const matchedClient = allClients.find((c) =>
+              (c.id && c.id === (existingInvoice as any)?.clientId) ||
+              (c.name && c.name.toLowerCase() === clientCompany.toLowerCase())
+            );
+            if (matchedClient) {
+              await updateItem('clients', matchedClient.id, {
+                contactPerson: client.contact_person || matchedClient.contactPerson || undefined,
+                email: client.email || matchedClient.email || undefined,
+                phone: client.phone || matchedClient.phone || undefined,
+                address: client.address || matchedClient.address || undefined,
+                gstin: client.gstin || matchedClient.gstin || undefined,
+              });
+            } else if (client.email || client.phone || client.address || client.gstin) {
+              await createItem('clients', {
+                name: clientCompany,
+                nameKey: nameKeyOf(clientCompany),
+                contactPerson: client.contact_person || clientCompany,
+                email: client.email || undefined,
+                phone: client.phone || undefined,
+                address: client.address || undefined,
+                gstin: client.gstin || undefined,
+                category: 'Corporate',
+              });
+            }
+          } catch (e) {
+            console.warn('Could not sync client:', e);
+          }
+        }
 
         if (existingInvoice) {
           await updateInvoice(existingInvoice.id, invoiceData);

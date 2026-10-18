@@ -1049,6 +1049,7 @@ export async function convertQuotationAtomic(
   const rid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const orderId = rid();
   const invoiceId = rid();
+  const qRaw = quotation as any;
   const updates: Record<string, unknown> = {};
   updates[`orders/${orderId}`] = clean({
     number: args.orderNumber,
@@ -1056,6 +1057,23 @@ export async function convertQuotationAtomic(
     clientId: quotation.clientId,
     clientName: quotation.clientName,
     clientKey: quotation.clientName ? nameKeyOf(quotation.clientName) : undefined,
+    client_name: qRaw.client_name ?? qRaw.contact_person,
+    client_company: qRaw.client_company ?? quotation.clientName,
+    client_address: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    client_email: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    client_phone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    client_gstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    clientCompany: qRaw.client_company ?? quotation.clientName,
+    clientAddress: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    clientEmail: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    clientPhone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    clientGstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    cgst_percent: qRaw.cgst_percent,
+    sgst_percent: qRaw.sgst_percent,
+    igst_percent: qRaw.igst_percent,
+    tax_amount: qRaw.tax_amount ?? quotation.tax,
+    discount_amount: qRaw.discount_amount ?? quotation.discount,
+    discount_percent: qRaw.discount_percent,
     taskId: args.taskId,
     quotationId: quotation.id,
     invoiceId,
@@ -1075,6 +1093,23 @@ export async function convertQuotationAtomic(
     clientId: quotation.clientId,
     clientName: quotation.clientName,
     clientKey: quotation.clientName ? nameKeyOf(quotation.clientName) : undefined,
+    client_name: qRaw.client_name ?? qRaw.contact_person,
+    client_company: qRaw.client_company ?? quotation.clientName,
+    client_address: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    client_email: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    client_phone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    client_gstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    clientCompany: qRaw.client_company ?? quotation.clientName,
+    clientAddress: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    clientEmail: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    clientPhone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    clientGstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    cgst_percent: qRaw.cgst_percent,
+    sgst_percent: qRaw.sgst_percent,
+    igst_percent: qRaw.igst_percent,
+    tax_amount: qRaw.tax_amount ?? quotation.tax,
+    discount_amount: qRaw.discount_amount ?? quotation.discount,
+    discount_percent: qRaw.discount_percent,
     quotationId: quotation.id,
     orderId,
     items: quotation.items,
@@ -1125,6 +1160,7 @@ export function buildConvertQuotationToProformaUpdate(
   const stamp = nowIso();
   const rid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const proformaId = rid();
+  const qRaw = quotation as any;
   const updates: Record<string, unknown> = {};
 
   updates[`proformaInvoices/${proformaId}`] = clean({
@@ -1135,6 +1171,23 @@ export function buildConvertQuotationToProformaUpdate(
     clientId: quotation.clientId,
     clientName: quotation.clientName,
     clientKey: quotation.clientName ? nameKeyOf(quotation.clientName) : undefined,
+    client_name: qRaw.client_name ?? qRaw.contact_person,
+    client_company: qRaw.client_company ?? quotation.clientName,
+    client_address: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    client_email: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    client_phone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    client_gstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    clientCompany: qRaw.client_company ?? quotation.clientName,
+    clientAddress: qRaw.client_address ?? qRaw.clientAddress ?? qRaw.address,
+    clientEmail: qRaw.client_email ?? qRaw.clientEmail ?? qRaw.email,
+    clientPhone: qRaw.client_phone ?? qRaw.clientPhone ?? qRaw.phone,
+    clientGstin: qRaw.client_gstin ?? qRaw.clientGstin ?? qRaw.gstin,
+    cgst_percent: qRaw.cgst_percent,
+    sgst_percent: qRaw.sgst_percent,
+    igst_percent: qRaw.igst_percent,
+    tax_amount: qRaw.tax_amount ?? quotation.tax,
+    discount_amount: qRaw.discount_amount ?? quotation.discount,
+    discount_percent: qRaw.discount_percent,
     items: quotation.items,
     subtotal: quotation.subtotal,
     tax: quotation.tax,
@@ -1189,6 +1242,7 @@ export function buildConvertProformaToInvoiceUpdate(
   const rid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const orderId = rid();
   const invoiceId = rid();
+  const pRaw = proforma as any;
   const updates: Record<string, unknown> = {};
 
   updates[`orders/${orderId}`] = clean({
@@ -1197,6 +1251,23 @@ export function buildConvertProformaToInvoiceUpdate(
     clientId: proforma.clientId,
     clientName: proforma.clientName,
     clientKey: proforma.clientName ? nameKeyOf(proforma.clientName) : undefined,
+    client_name: pRaw.client_name ?? pRaw.contact_person,
+    client_company: pRaw.client_company ?? proforma.clientName,
+    client_address: pRaw.client_address ?? pRaw.clientAddress ?? pRaw.address,
+    client_email: pRaw.client_email ?? pRaw.clientEmail ?? pRaw.email,
+    client_phone: pRaw.client_phone ?? pRaw.clientPhone ?? pRaw.phone,
+    client_gstin: pRaw.client_gstin ?? pRaw.clientGstin ?? pRaw.gstin,
+    clientCompany: pRaw.client_company ?? proforma.clientName,
+    clientAddress: pRaw.client_address ?? pRaw.clientAddress ?? pRaw.address,
+    clientEmail: pRaw.client_email ?? pRaw.clientEmail ?? pRaw.email,
+    clientPhone: pRaw.client_phone ?? pRaw.clientPhone ?? pRaw.phone,
+    clientGstin: pRaw.client_gstin ?? pRaw.clientGstin ?? pRaw.gstin,
+    cgst_percent: pRaw.cgst_percent,
+    sgst_percent: pRaw.sgst_percent,
+    igst_percent: pRaw.igst_percent,
+    tax_amount: pRaw.tax_amount ?? proforma.tax,
+    discount_amount: pRaw.discount_amount ?? proforma.discount,
+    discount_percent: pRaw.discount_percent,
     taskId: args.taskId,
     quotationId: proforma.quotationId,
     proformaInvoiceId: proforma.id,
@@ -1218,6 +1289,23 @@ export function buildConvertProformaToInvoiceUpdate(
     clientId: proforma.clientId,
     clientName: proforma.clientName,
     clientKey: proforma.clientName ? nameKeyOf(proforma.clientName) : undefined,
+    client_name: pRaw.client_name ?? pRaw.contact_person,
+    client_company: pRaw.client_company ?? proforma.clientName,
+    client_address: pRaw.client_address ?? pRaw.clientAddress ?? pRaw.address,
+    client_email: pRaw.client_email ?? pRaw.clientEmail ?? pRaw.email,
+    client_phone: pRaw.client_phone ?? pRaw.clientPhone ?? pRaw.phone,
+    client_gstin: pRaw.client_gstin ?? pRaw.clientGstin ?? pRaw.gstin,
+    clientCompany: pRaw.client_company ?? proforma.clientName,
+    clientAddress: pRaw.client_address ?? pRaw.clientAddress ?? pRaw.address,
+    clientEmail: pRaw.client_email ?? pRaw.clientEmail ?? pRaw.email,
+    clientPhone: pRaw.client_phone ?? pRaw.clientPhone ?? pRaw.phone,
+    clientGstin: pRaw.client_gstin ?? pRaw.clientGstin ?? pRaw.gstin,
+    cgst_percent: pRaw.cgst_percent,
+    sgst_percent: pRaw.sgst_percent,
+    igst_percent: pRaw.igst_percent,
+    tax_amount: pRaw.tax_amount ?? proforma.tax,
+    discount_amount: pRaw.discount_amount ?? proforma.discount,
+    discount_percent: pRaw.discount_percent,
     quotationId: proforma.quotationId,
     proformaInvoiceId: proforma.id,
     orderId,

@@ -215,14 +215,19 @@ export default function QuotesPage() {
   };
 
   const billToFor = async (q: Quotation) => {
-    const c = clients.find((x) => x.id === q.clientId) ?? (await getItem<Client>('clients', q.clientId).catch(() => null));
+    const raw = q as any;
+    const c = clients.find((x) => 
+      (x.id && x.id === q.clientId) || 
+      (x.name && (x.name.toLowerCase() === (q.clientName || '').toLowerCase() || x.name.toLowerCase() === (raw.client_company || '').toLowerCase()))
+    ) ?? (q.clientId ? await getItem<Client>('clients', q.clientId).catch(() => null) : null);
+
     return {
-      name: q.clientName || c?.name,
-      company: c?.name || q.clientName,
-      address: c?.address,
-      email: c?.email,
-      phone: c?.phone,
-      gstin: c?.gstin,
+      name: raw.client_name || raw.contact_person || raw.contactPerson || c?.contactPerson || c?.name || q.clientName || '',
+      company: raw.client_company || raw.clientCompany || c?.name || q.clientName || '',
+      address: raw.client_address || raw.clientAddress || raw.address || c?.address || '',
+      email: raw.client_email || raw.clientEmail || raw.email || c?.email || '',
+      phone: raw.client_phone || raw.clientPhone || raw.phone || c?.phone || '',
+      gstin: raw.client_gstin || raw.clientGstin || raw.gstin || c?.gstin || '',
     };
   };
 
@@ -230,22 +235,23 @@ export default function QuotesPage() {
     const id = toast.loading('Generating PDF…');
     try {
       const billTo = await billToFor(q);
+      const raw = q as any;
       const quotePayload = {
         ...q,
         number: q.number,
         quotation_number: q.number,
-        client_name: billTo?.name || q.clientName,
-        clientName: billTo?.name || q.clientName,
-        client_company: billTo?.company || billTo?.name || q.clientName,
-        clientCompany: billTo?.company || billTo?.name || q.clientName,
-        client_address: billTo?.address,
-        clientAddress: billTo?.address,
-        client_email: billTo?.email,
-        clientEmail: billTo?.email,
-        client_phone: billTo?.phone,
-        clientPhone: billTo?.phone,
-        client_gstin: billTo?.gstin,
-        clientGstin: billTo?.gstin,
+        client_name: billTo.name || raw.client_name || q.clientName,
+        clientName: billTo.name || raw.client_name || q.clientName,
+        client_company: billTo.company || raw.client_company || q.clientName,
+        clientCompany: billTo.company || raw.client_company || q.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
         amount: q.total,
         total: q.total,
         issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),
@@ -273,22 +279,23 @@ export default function QuotesPage() {
     const id = toast.loading('Generating preview…');
     try {
       const billTo = await billToFor(q);
+      const raw = q as any;
       const quotePayload = {
         ...q,
         number: q.number,
         quotation_number: q.number,
-        client_name: billTo?.name || q.clientName,
-        clientName: billTo?.name || q.clientName,
-        client_company: billTo?.company || billTo?.name || q.clientName,
-        clientCompany: billTo?.company || billTo?.name || q.clientName,
-        client_address: billTo?.address,
-        clientAddress: billTo?.address,
-        client_email: billTo?.email,
-        clientEmail: billTo?.email,
-        client_phone: billTo?.phone,
-        clientPhone: billTo?.phone,
-        client_gstin: billTo?.gstin,
-        clientGstin: billTo?.gstin,
+        client_name: billTo.name || raw.client_name || q.clientName,
+        clientName: billTo.name || raw.client_name || q.clientName,
+        client_company: billTo.company || raw.client_company || q.clientName,
+        clientCompany: billTo.company || raw.client_company || q.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
         amount: q.total,
         total: q.total,
         issue_date: q.issueDate ?? q.createdAt?.slice(0, 10),

@@ -13,6 +13,7 @@ import { PricingSummary } from './pricing-summary';
 import { NotesSection } from './notes-section';
 import { useWorkspace } from '@/lib/settings/workspace-context';
 import { useAuth } from '@/lib/firebase/auth-context';
+import { getCollection, getItem, createItem, updateItem, nameKeyOf, type Client } from '@/lib/db';
 import type { Quotation, QuotationStatus } from '@/lib/db/types';
 import type {
   DocumentMeta,
@@ -40,17 +41,19 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
+  const rawQuote = existingQuote as any;
+
   // Form state
   const [meta, setMeta] = useState<DocumentMeta>({
-    document_number: existingQuote?.quotation_number || (existingQuote as any)?.number || '',
+    document_number: existingQuote?.quotation_number || rawQuote?.number || '',
     status: (existingQuote?.status || 'draft').toLowerCase(),
-    issue_date: (existingQuote as any)?.issueDate
-      ? (existingQuote as any).issueDate
+    issue_date: rawQuote?.issueDate
+      ? rawQuote.issueDate
       : existingQuote?.created_at
       ? new Date(existingQuote.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
-    valid_until: (existingQuote as any)?.validUntil
-      ? (existingQuote as any).validUntil
+    valid_until: rawQuote?.validUntil
+      ? rawQuote.validUntil
       : existingQuote?.valid_until
       ? new Date(existingQuote.valid_until).toISOString().split('T')[0]
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -58,13 +61,38 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
   });
 
   const [client, setClient] = useState<DocumentClient>({
-    company: existingQuote?.client_company || (existingQuote as any)?.clientName || '',
-    contact_person: existingQuote?.client_name || (existingQuote as any)?.clientName || '',
-    email: existingQuote?.client_email || '',
-    phone: (existingQuote as any)?.phone || '',
-    address: existingQuote?.client_address || '',
-    gstin: existingQuote?.client_gstin || '',
+    company: existingQuote?.client_company || rawQuote?.clientCompany || rawQuote?.company || rawQuote?.clientName || '',
+    contact_person: existingQuote?.client_name || rawQuote?.contact_person || rawQuote?.contactPerson || rawQuote?.clientName || '',
+    email: existingQuote?.client_email || rawQuote?.clientEmail || rawQuote?.email || '',
+    phone: rawQuote?.client_phone || rawQuote?.clientPhone || rawQuote?.phone || '',
+    address: existingQuote?.client_address || rawQuote?.clientAddress || rawQuote?.address || '',
+    gstin: existingQuote?.client_gstin || rawQuote?.clientGstin || rawQuote?.gstin || '',
   });
+
+  // Hydrate client details from clients collection if missing
+  useEffect(() => {
+    if (!existingQuote) return;
+    const cid = rawQuote?.clientId;
+    const cname = rawQuote?.clientName || existingQuote.client_company;
+    (async () => {
+      let matched: Client | null = null;
+      if (cid) matched = await getItem<Client>('clients', cid).catch(() => null);
+      if (!matched && cname) {
+        const list = await getCollection<Client>('clients').catch(() => []);
+        matched = list.find((c) => c.name?.toLowerCase() === cname.toLowerCase()) || null;
+      }
+      if (matched) {
+        setClient((prev) => ({
+          company: prev.company || matched?.name || '',
+          contact_person: prev.contact_person || matched?.contactPerson || matched?.name || '',
+          email: prev.email || matched?.email || '',
+          phone: prev.phone || matched?.phone || '',
+          address: prev.address || matched?.address || '',
+          gstin: prev.gstin || matched?.gstin || '',
+        }));
+      }
+    })();
+  }, [existingQuote]);
 
   const [items, setItems] = useState<DocumentItem[]>(() => {
     if (existingQuote?.items && existingQuote.items.length > 0) {
@@ -165,9 +193,15 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           client_id: (existingQuote as any)?.clientId || clientDisplayName,
           client_name: client.contact_person,
           client_email: client.email,
+          clientEmail: client.email,
           client_company: client.company,
+          clientCompany: client.company,
           client_address: client.address,
+          clientAddress: client.address,
           client_gstin: client.gstin,
+          clientGstin: client.gstin,
+          client_phone: client.phone,
+          clientPhone: client.phone,
           project_title: '',
           amount: pricing.grand_total,
           subtotal: pricing.subtotal,
@@ -203,6 +237,40 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
             total: item.total,
           })),
         };
+
+        // Sync/upsert client to clients collection so details persist across CRM
+        const clientCompany = client.company || client.contact_person;
+        if (clientCompany) {
+          try {
+            const allClients = await getCollection<Client>('clients').catch(() => []);
+            const matchedClient = allClients.find((c) =>
+              (c.id && c.id === (existingQuote as any)?.clientId) ||
+              (c.name && c.name.toLowerCase() === clientCompany.toLowerCase())
+            );
+            if (matchedClient) {
+              await updateItem('clients', matchedClient.id, {
+                contactPerson: client.contact_person || matchedClient.contactPerson || undefined,
+                email: client.email || matchedClient.email || undefined,
+                phone: client.phone || matchedClient.phone || undefined,
+                address: client.address || matchedClient.address || undefined,
+                gstin: client.gstin || matchedClient.gstin || undefined,
+              });
+            } else if (client.email || client.phone || client.address || client.gstin) {
+              await createItem('clients', {
+                name: clientCompany,
+                nameKey: nameKeyOf(clientCompany),
+                contactPerson: client.contact_person || clientCompany,
+                email: client.email || undefined,
+                phone: client.phone || undefined,
+                address: client.address || undefined,
+                gstin: client.gstin || undefined,
+                category: 'Corporate',
+              });
+            }
+          } catch (e) {
+            console.warn('Could not sync client:', e);
+          }
+        }
 
         if (existingQuote) {
           await updateQuotation(existingQuote.id, quotationData);
