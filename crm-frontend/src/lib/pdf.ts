@@ -19,7 +19,7 @@ export interface PdfLineItem {
 }
 
 export interface PdfDocOptions {
-  kind: 'INVOICE' | 'QUOTATION';
+  kind: 'INVOICE' | 'QUOTATION' | 'PROFORMA';
   number: string;
   issueDate?: string;
   dueDate?: string;
@@ -284,7 +284,7 @@ function buildHtml(opts: PdfDocOptions): string {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-import { generateInvoicePdf, generateQuotationPdf, downloadPdf } from '@/lib/pdf-engine/generator';
+import { generateInvoicePdf, generateQuotationPdf, generateProformaInvoicePdf, downloadPdf } from '@/lib/pdf-engine/generator';
 
 /**
  * Directly generates and downloads a clean, themed PDF matching tsk-crm engine.
@@ -292,9 +292,49 @@ import { generateInvoicePdf, generateQuotationPdf, downloadPdf } from '@/lib/pdf
  */
 export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
   const isInvoice = opts.kind === 'INVOICE';
-  const filename = `${isInvoice ? 'Invoice' : 'Quotation'}-${opts.number || 'doc'}.pdf`;
+  const isProforma = opts.kind === 'PROFORMA';
+  const kindLabel = isInvoice ? 'Invoice' : isProforma ? 'Proforma' : 'Quotation';
+  const filename = `${kindLabel}-${opts.number || 'doc'}.pdf`;
 
-  if (isInvoice) {
+  if (isProforma) {
+    const doc = await generateProformaInvoicePdf('', {
+      number: opts.number,
+      issueDate: opts.issueDate,
+      issue_date: opts.issueDate,
+      validUntil: opts.validUntil,
+      valid_until: opts.validUntil,
+      status: opts.status,
+      clientName: opts.clientName,
+      client_name: opts.clientName,
+      clientCompany: opts.clientCompany,
+      client_company: opts.clientCompany,
+      clientAddress: opts.clientAddress,
+      client_address: opts.clientAddress,
+      clientEmail: opts.clientEmail,
+      client_email: opts.clientEmail,
+      clientPhone: opts.clientPhone,
+      client_phone: opts.clientPhone,
+      items: opts.items.map((it: any) => ({
+        name: it.description || it.name || '',
+        description: it.description || '',
+        quantity: it.quantity,
+        unit: it.unit || 'pcs',
+        unit_price: it.unitPrice ?? it.unit_price ?? 0,
+        unitPrice: it.unitPrice ?? it.unit_price ?? 0,
+        total: it.total,
+      })),
+      subtotal: opts.subtotal,
+      discount: opts.discount,
+      discount_amount: opts.discount,
+      tax: opts.tax,
+      tax_amount: opts.tax,
+      total: opts.total,
+      amount: opts.total,
+      notes: opts.notes,
+      terms: opts.terms,
+    });
+    await downloadPdf(doc, filename);
+  } else if (isInvoice) {
     const doc = await generateInvoicePdf('', {
       number: opts.number,
       invoice_number: opts.number,

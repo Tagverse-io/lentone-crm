@@ -84,6 +84,51 @@ async function addLogo(doc: jsPDF, url: string | undefined | null): Promise<numb
   }
 }
 
+async function applyLogoWatermark(doc: jsPDF, url: string | undefined | null): Promise<void> {
+  if (!url) return;
+  try {
+    const data = await getBase64ImageFromURL(url);
+    const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+      if (typeof Image !== 'undefined') {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+        img.onerror = () => reject(new Error('logo decode failed'));
+        img.src = data;
+      } else {
+        resolve({ w: 100, h: 100 });
+      }
+    });
+
+    const PH = doc.internal.pageSize.getHeight();
+    const PW = doc.internal.pageSize.getWidth();
+    const ratio = (size.w || 1) / (size.h || 1);
+    let drawW = 90;
+    let drawH = drawW / ratio;
+    if (drawH > 90) {
+      drawH = 90;
+      drawW = drawH * ratio;
+    }
+    const x = (PW - drawW) / 2;
+    const y = (PH - drawH) / 2;
+
+    const pages = doc.getNumberOfPages();
+    for (let p = 1; p <= pages; p++) {
+      doc.setPage(p);
+      try {
+        const gs = new (doc as any).GState({ opacity: 0.08 });
+        doc.setGState(gs);
+        doc.addImage(data, 'PNG', x, y, drawW, drawH);
+        const gsReset = new (doc as any).GState({ opacity: 1.0 });
+        doc.setGState(gsReset);
+      } catch {
+        // Fallback gracefully if GState not supported
+      }
+    }
+  } catch {
+    // Fallback gracefully if logo decode fails
+  }
+}
+
 function drawDivider(doc: jsPDF, y: number) {
   doc.setDrawColor(...C_LINE);
   doc.setLineWidth(0.3);
@@ -326,6 +371,7 @@ export async function generateQuotationPdf(
   }
 
   addFooter(doc, s);
+  await applyLogoWatermark(doc, s.logo_url || brand.logo);
   return doc;
 }
 
@@ -583,6 +629,203 @@ export async function generateInvoicePdf(
   }
 
   addFooter(doc, s);
+  await applyLogoWatermark(doc, s.logo_url || brand.logo);
+  return doc;
+}
+
+// ─── Proforma Invoice PDF ─────────────────────────────────────────────────────
+
+export async function generateProformaInvoicePdf(
+  workspaceId: string,
+  proforma: any,
+  client: User | null = null,
+): Promise<jsPDF> {
+  const s = await getCompanySettings(workspaceId);
+  const cur = proforma.currency || s.default_currency || 'INR';
+  const fs = fsFromCompany(s, cur);
+  const primaryRgb = hexToRgb(s.primary_color);
+  const style = s.template_style || 'modern';
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  if (style === 'corporate') {
+    doc.setFillColor(...primaryRgb);
+    doc.rect(0, 0, PW, 4, 'F');
+  }
+
+  let startY = await addLogo(doc, s.logo_url || brand.logo);
+  if (startY === M) {
+    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
+    doc.text(s.company_name || 'Company', M, M + 5);
+    startY = M + 12;
+  }
+
+  const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
+  doc.setFontSize(22).setFont('helvetica', 'bold').setTextColor(...titleColor);
+  doc.text('PROFORMA INVOICE', RX, M + 6, { align: 'right' });
+
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+  let yR = M + 14;
+  const num = proforma.number || proforma.id || 'PI-001';
+  doc.text(`Proforma #: ${num}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const issueDate = proforma.issueDate || proforma.issue_date || proforma.createdAt || proforma.created_at || new Date().toISOString();
+  doc.text(`Date: ${formatDateS(issueDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
+
+  const validUntil = proforma.validUntil || proforma.valid_until;
+  if (validUntil) {
+    doc.text(`Valid Until: ${formatDateS(validUntil, fs)}`, RX, yR, { align: 'right' }); yR += 5;
+  }
+  if (proforma.status) {
+    doc.text(`Status: ${proforma.status}`, RX, yR, { align: 'right' }); yR += 5;
+  }
+
+  const topSectionY = Math.max(startY, yR) + 12;
+  drawDivider(doc, topSectionY);
+
+  let yL = topSectionY + 10;
+  let yBT = topSectionY + 10;
+
+  // FROM
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
+  doc.text('FROM', M, yL); yL += 5;
+
+  doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+  doc.text(s.company_name || 'Company', M, yL); yL += 5;
+
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+  if (s.address) {
+    const ls = doc.splitTextToSize(s.address, 80);
+    doc.text(ls, M, yL); yL += ls.length * 4.5;
+  }
+  if (s.email) { doc.text(`Email: ${s.email}`, M, yL); yL += 4.5; }
+  if (s.phone) { doc.text(`Phone: ${s.phone}`, M, yL); yL += 4.5; }
+  if (s.gst_number) { doc.text(`GSTIN: ${s.gst_number}`, M, yL); yL += 4.5; }
+
+  // BILL TO
+  const rightColX = 120;
+  doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
+  doc.text('BILL TO', rightColX, yBT); yBT += 5;
+
+  doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(...C_DARK);
+  const clientName = proforma.clientName || proforma.client_name || client?.full_name || client?.name || 'Client Name';
+  doc.text(clientName, rightColX, yBT); yBT += 5;
+
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+  const cCompany = proforma.clientCompany || proforma.client_company;
+  if (cCompany) { doc.text(cCompany, rightColX, yBT); yBT += 4.5; }
+  const cAddress = proforma.clientAddress || proforma.client_address || (client as any)?.address;
+  if (cAddress) {
+    const ls = doc.splitTextToSize(cAddress, 70);
+    doc.text(ls, rightColX, yBT); yBT += ls.length * 4.5;
+  }
+  const cEmail = proforma.clientEmail || proforma.client_email || client?.email;
+  if (cEmail) { doc.text(`Email: ${cEmail}`, rightColX, yBT); yBT += 4.5; }
+  const cGstin = proforma.clientGstin || proforma.client_gstin;
+  if (cGstin) { doc.text(`GSTIN: ${cGstin}`, rightColX, yBT); yBT += 4.5; }
+
+  const tableY = Math.max(yL, yBT) + 12;
+  const rawItems = proforma.items && proforma.items.length > 0 ? proforma.items : null;
+  const rows: string[][] =
+    rawItems && rawItems.length > 0
+      ? rawItems.map((item: any, i: number) => {
+          const qty = Number(item.quantity) || 1;
+          const rate = Number(item.unitPrice || item.unit_price || item.rate) || 0;
+          const tot = Number(item.total) || qty * rate;
+          return [
+            String(i + 1),
+            item.description || item.name || 'Item',
+            item.unit ? `${qty} ${item.unit}` : String(qty),
+            formatAmtS(rate, fs),
+            formatAmtS(tot, fs),
+          ];
+        })
+      : [['1', 'General Items', '1', formatAmtS(Number(proforma.total) || 0, fs), formatAmtS(Number(proforma.total) || 0, fs)]];
+
+  autoTable(doc, {
+    startY: tableY,
+    head: [['#', 'Item', 'Qty', 'Rate', 'Total']],
+    body: rows,
+    theme: 'plain',
+    headStyles: {
+      fillColor: style === 'corporate' ? primaryRgb : [245, 245, 245],
+      textColor: style === 'corporate' ? [255, 255, 255] : C_DARK,
+      fontStyle: 'bold',
+      fontSize: 9,
+    },
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3.5, textColor: C_DARK },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 32, halign: 'right' },
+      4: { cellWidth: 32, halign: 'right' },
+    },
+    margin: { left: M, right: M },
+  });
+
+  let curY = ((doc as any).lastAutoTable?.finalY ?? tableY + 30) + 8;
+  const rightW = 85;
+  const rightX = RX - rightW;
+
+  const subtotal = Number(proforma.subtotal) || Number(proforma.total) || 0;
+  const discount = Number(proforma.discount) || 0;
+  const tax = Number(proforma.tax) || 0;
+  const grandTotal = Number(proforma.total) || (subtotal - discount + tax);
+
+  const drawRow = (label: string, val: string, isBold = false) => {
+    doc.setFontSize(9).setFont('helvetica', isBold ? 'bold' : 'normal');
+    doc.setTextColor(...(isBold ? C_DARK : C_GRAY));
+    doc.text(label, rightX, curY);
+    doc.text(val, RX, curY, { align: 'right' });
+    curY += 5.5;
+  };
+
+  drawRow('Subtotal:', formatAmtS(subtotal, fs));
+  if (discount > 0) drawRow('Discount:', `-${formatAmtS(discount, fs)}`);
+  if (tax > 0) drawRow(`Tax (${s.tax_rate ?? 18}%):`, formatAmtS(tax, fs));
+
+  doc.setDrawColor(...C_LINE);
+  doc.setLineWidth(0.3);
+  doc.line(rightX, curY - 2, RX, curY - 2);
+
+  doc.setFillColor(...(style === 'corporate' ? [primaryRgb[0], primaryRgb[1], primaryRgb[2]] : [245, 245, 245]));
+  doc.rect(rightX, curY - 1, rightW, 9, 'F');
+  doc.setFontSize(10).setFont('helvetica', 'bold');
+  doc.setTextColor(...(style === 'corporate' ? [255, 255, 255] : C_DARK));
+  doc.text('Total Due:', rightX + 3, curY + 5);
+  doc.text(formatAmtS(grandTotal, fs), RX - 3, curY + 5, { align: 'right' });
+  curY += 14;
+
+  let y = curY;
+  if (proforma.notes) {
+    doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
+    doc.text('NOTES', M, y); y += 4.5;
+    doc.setFontSize(8.5).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+    const nl = doc.splitTextToSize(proforma.notes, 120);
+    doc.text(nl, M, y); y += nl.length * 4 + 4;
+  }
+  if (proforma.terms || s.default_terms) {
+    doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
+    doc.text('TERMS & CONDITIONS', M, y); y += 4.5;
+    doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+    const tl = doc.splitTextToSize(proforma.terms || s.default_terms, 120);
+    doc.text(tl, M, y); y += tl.length * 3.8 + 4;
+  }
+
+  // Bank & payment details
+  if (s.bank_name || s.upi_id) {
+    doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
+    doc.text('BANK & PAYMENT DETAILS', M, y); y += 4.5;
+    doc.setFontSize(8.5).setFont('helvetica', 'normal').setTextColor(...C_GRAY);
+    if (s.bank_name) { doc.text(`Bank: ${s.bank_name}`, M, y); y += 4; }
+    if (s.bank_account) { doc.text(`Account: ${s.bank_account}`, M, y); y += 4; }
+    if (s.bank_ifsc) { doc.text(`IFSC: ${s.bank_ifsc}`, M, y); y += 4; }
+    if (s.upi_id) { doc.text(`UPI: ${s.upi_id}`, M, y); y += 4; }
+  }
+
+  addFooter(doc, s);
+  await applyLogoWatermark(doc, s.logo_url || brand.logo);
   return doc;
 }
 
@@ -691,6 +934,7 @@ export async function generateContractPdf(
   y += 18;
 
   addFooter(doc, s);
+  await applyLogoWatermark(doc, s.logo_url || brand.logo);
   return doc;
 }
 
