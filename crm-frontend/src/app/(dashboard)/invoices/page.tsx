@@ -102,12 +102,30 @@ export default function InvoicesPage() {
       const seq = await nextSequence('invoices');
       const invNumber = formatNumber(settings?.invoicePrefix ?? 'INV', seq);
       const client = clients.find((c) => c.id === q.clientId);
+      const qRaw = q as any;
       const id = await createItem('invoices', {
         number: invNumber,
         numberKey: invNumber.toLowerCase(),
         clientId: q.clientId,
         clientName: client?.name ?? q.clientName,
         clientKey: client ? nameKeyOf(client.name) : q.clientKey,
+        client_name: qRaw.client_name ?? qRaw.contact_person ?? client?.contactPerson,
+        client_company: qRaw.client_company ?? client?.name ?? q.clientName,
+        client_address: qRaw.client_address ?? qRaw.clientAddress ?? client?.address,
+        client_email: qRaw.client_email ?? qRaw.clientEmail ?? client?.email,
+        client_phone: qRaw.client_phone ?? qRaw.clientPhone ?? client?.phone,
+        client_gstin: qRaw.client_gstin ?? qRaw.clientGstin ?? client?.gstin,
+        clientCompany: qRaw.client_company ?? client?.name ?? q.clientName,
+        clientAddress: qRaw.client_address ?? qRaw.clientAddress ?? client?.address,
+        clientEmail: qRaw.client_email ?? qRaw.clientEmail ?? client?.email,
+        clientPhone: qRaw.client_phone ?? qRaw.clientPhone ?? client?.phone,
+        clientGstin: qRaw.client_gstin ?? qRaw.clientGstin ?? client?.gstin,
+        cgst_percent: qRaw.cgst_percent,
+        sgst_percent: qRaw.sgst_percent,
+        igst_percent: qRaw.igst_percent,
+        tax_amount: qRaw.tax_amount ?? q.tax,
+        discount_amount: qRaw.discount_amount ?? q.discount,
+        discount_percent: qRaw.discount_percent,
         quotationId: q.id,
         items: q.items,
         subtotal: q.subtotal,
@@ -616,7 +634,7 @@ export default function InvoicesPage() {
                       {preview.notes && <div className="sm:col-span-2"><span className="text-muted-foreground">Notes: </span>{preview.notes}</div>}
                       <div className="sm:col-span-2">
                         <span className="text-muted-foreground">Items: </span>
-                        {preview.items.map((i) => `${i.description} ×${i.quantity}`).join('; ')}
+                        {preview.items.map((i: any) => `${i.name || i.description || 'Item'} ×${i.quantity}`).join('; ')}
                       </div>
                     </div>
                   ),

@@ -411,6 +411,13 @@ function drawTotals(
 
   if (amountPaid > 0) {
     doc.setFont('helvetica', 'bold').setTextColor(...C_DARK);
+    doc.text('Invoice Total:', labelX + 15, y);
+    doc.setFont('helvetica', 'normal').setTextColor(40, 40, 40);
+    doc.text(formatAmtS(grandTotal), valX, y, { align: 'right' });
+    y += 5.5;
+    doc.line(labelX, y - 2, RX, y - 2);
+
+    doc.setFont('helvetica', 'bold').setTextColor(...C_DARK);
     doc.text('Amount Paid:', labelX + 15, y);
     doc.setFont('helvetica', 'normal').setTextColor(40, 40, 40);
     doc.text(`- ${formatAmtS(amountPaid)}`, valX, y, { align: 'right' });
@@ -674,13 +681,13 @@ export async function generateInvoicePdf(
 
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = invoice.notes || s.default_notes;
-  const terms = invoice.terms || invoice.terms_and_conditions || s.default_terms;
+  const terms = invoice.terms || invoice.terms_and_conditions || invoice.termsAndConditions || s.default_terms;
   const customBank = {
-    bankHolder: invoice.custom_bank_holder || invoice.account_holder,
-    bankName: invoice.custom_bank_name || invoice.bank_name,
-    bankAcc: invoice.custom_bank_account || invoice.bank_account,
-    bankIfsc: invoice.custom_bank_ifsc || invoice.bank_ifsc,
-    upiId: invoice.custom_upi_id || invoice.upi_id,
+    bankHolder: invoice.custom_bank_holder || invoice.bank_holder || invoice.account_holder || invoice.bankHolder || invoice.accountHolder,
+    bankName: invoice.custom_bank_name || invoice.bank_name || invoice.bankName,
+    bankAcc: invoice.custom_bank_account || invoice.bank_account || invoice.bankAccount || invoice.account_number || invoice.accountNumber,
+    bankIfsc: invoice.custom_bank_ifsc || invoice.bank_ifsc || invoice.bankIfsc || invoice.ifsc || invoice.ifsc_code,
+    upiId: invoice.custom_upi_id || invoice.upi_id || invoice.upiId,
   };
   await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 
@@ -809,13 +816,13 @@ export async function generateQuotationPdf(
 
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = quotation.notes || s.default_notes;
-  const terms = quotation.terms || s.default_terms;
+  const terms = quotation.terms || quotation.terms_and_conditions || quotation.termsAndConditions || s.default_terms;
   const customBank = {
-    bankHolder: quotation.custom_bank_holder || quotation.account_holder,
-    bankName: quotation.custom_bank_name || quotation.bank_name,
-    bankAcc: quotation.custom_bank_account || quotation.bank_account,
-    bankIfsc: quotation.custom_bank_ifsc || quotation.bank_ifsc,
-    upiId: quotation.custom_upi_id || quotation.upi_id,
+    bankHolder: quotation.custom_bank_holder || quotation.bank_holder || quotation.account_holder || quotation.bankHolder || quotation.accountHolder,
+    bankName: quotation.custom_bank_name || quotation.bank_name || quotation.bankName,
+    bankAcc: quotation.custom_bank_account || quotation.bank_account || quotation.bankAccount || quotation.account_number || quotation.accountNumber,
+    bankIfsc: quotation.custom_bank_ifsc || quotation.bank_ifsc || quotation.bankIfsc || quotation.ifsc || quotation.ifsc_code,
+    upiId: quotation.custom_upi_id || quotation.upi_id || quotation.upiId,
   };
   await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 
@@ -944,13 +951,13 @@ export async function generateProformaInvoicePdf(
 
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = proforma.notes || s.default_notes;
-  const terms = proforma.terms || s.default_terms;
+  const terms = proforma.terms || proforma.terms_and_conditions || proforma.termsAndConditions || s.default_terms;
   const customBank = {
-    bankHolder: proforma.custom_bank_holder || proforma.account_holder,
-    bankName: proforma.custom_bank_name || proforma.bank_name,
-    bankAcc: proforma.custom_bank_account || proforma.bank_account,
-    bankIfsc: proforma.custom_bank_ifsc || proforma.bank_ifsc,
-    upiId: proforma.custom_upi_id || proforma.upi_id,
+    bankHolder: proforma.custom_bank_holder || proforma.bank_holder || proforma.account_holder || proforma.bankHolder || proforma.accountHolder,
+    bankName: proforma.custom_bank_name || proforma.bank_name || proforma.bankName,
+    bankAcc: proforma.custom_bank_account || proforma.bank_account || proforma.bankAccount || proforma.account_number || proforma.accountNumber,
+    bankIfsc: proforma.custom_bank_ifsc || proforma.bank_ifsc || proforma.bankIfsc || proforma.ifsc || proforma.ifsc_code,
+    upiId: proforma.custom_upi_id || proforma.upi_id || proforma.upiId,
   };
   await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 

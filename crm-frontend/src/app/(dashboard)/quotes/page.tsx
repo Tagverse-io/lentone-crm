@@ -137,6 +137,22 @@ export default function QuotesPage() {
         clientId,
         clientName: client?.name,
         clientKey: client ? nameKeyOf(client.name) : undefined,
+        client_name: client?.contactPerson || client?.name,
+        client_company: client?.name,
+        client_address: client?.address,
+        client_email: client?.email,
+        client_phone: client?.phone,
+        client_gstin: client?.gstin,
+        clientCompany: client?.name,
+        clientAddress: client?.address,
+        clientEmail: client?.email,
+        clientPhone: client?.phone,
+        clientGstin: client?.gstin,
+        tax_rate: taxRate,
+        tax_amount: t.tax,
+        discount_amount: t.discount,
+        cgst_percent: taxRate / 2,
+        sgst_percent: taxRate / 2,
         items: cleanItems,
         subtotal: t.subtotal,
         tax: t.tax,
@@ -188,7 +204,18 @@ export default function QuotesPage() {
       const [oSeq, iSeq] = await Promise.all([nextSequence('orders'), nextSequence('invoices')]);
       const orderNumber = formatNumber(settings?.orderPrefix ?? 'ORD', oSeq);
       const invoiceNumber = formatNumber(settings?.invoicePrefix ?? 'INV', iSeq);
-      await convertQuotationAtomic(q, { orderNumber, invoiceNumber });
+      const billTo = await billToFor(q);
+      const enrichedQ = {
+        ...q,
+        client_name: billTo.name || (q as any).client_name,
+        client_company: billTo.company || (q as any).client_company || q.clientName,
+        client_address: billTo.address || (q as any).client_address,
+        client_email: billTo.email || (q as any).client_email,
+        client_phone: billTo.phone || (q as any).client_phone,
+        client_gstin: billTo.gstin || (q as any).client_gstin,
+        clientName: billTo.company || q.clientName,
+      };
+      await convertQuotationAtomic(enrichedQ as Quotation, { orderNumber, invoiceNumber });
       toast.success(`Converted: order ${orderNumber}, invoice ${invoiceNumber}`);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -204,7 +231,18 @@ export default function QuotesPage() {
     try {
       const pSeq = await nextSequence('proformaInvoices');
       const proformaNumber = formatNumber(settings?.proformaPrefix ?? 'PI', pSeq);
-      await convertQuotationToProformaAtomic(q, { proformaNumber });
+      const billTo = await billToFor(q);
+      const enrichedQ = {
+        ...q,
+        client_name: billTo.name || (q as any).client_name,
+        client_company: billTo.company || (q as any).client_company || q.clientName,
+        client_address: billTo.address || (q as any).client_address,
+        client_email: billTo.email || (q as any).client_email,
+        client_phone: billTo.phone || (q as any).client_phone,
+        client_gstin: billTo.gstin || (q as any).client_gstin,
+        clientName: billTo.company || q.clientName,
+      };
+      await convertQuotationToProformaAtomic(enrichedQ as Quotation, { proformaNumber });
       toast.success(`Created Proforma Invoice ${proformaNumber}`);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -541,7 +579,7 @@ export default function QuotesPage() {
                       <div><span className="text-muted-foreground font-medium">Total: </span>{fmtMoney(preview.total, currency)}</div>
                       <div className="sm:col-span-2">
                         <span className="text-muted-foreground">Items: </span>
-                        {preview.items.map((i) => `${i.description} ×${i.quantity}`).join('; ')}
+                        {preview.items.map((i: any) => `${i.name || i.description || 'Item'} ×${i.quantity}`).join('; ')}
                       </div>
                       <div><span className="text-muted-foreground">Order: </span>{preview.orderId ? preview.orderId.slice(-6) : '—'}</div>
                       <div><span className="text-muted-foreground">Invoice: </span>{preview.invoiceId ? preview.invoiceId.slice(-6) : '—'}</div>

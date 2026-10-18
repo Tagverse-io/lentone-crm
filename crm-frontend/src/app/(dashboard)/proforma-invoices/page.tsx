@@ -84,12 +84,30 @@ export default function ProformaInvoicesPage() {
       const seq = await nextSequence('proformaInvoices');
       const piNumber = formatNumber(settings?.proformaPrefix ?? 'PI', seq);
       const client = clients.find((c) => c.id === q.clientId);
+      const qRaw = q as any;
       const id = await createItem('proformaInvoices', {
         number: piNumber,
         numberKey: piNumber.toLowerCase(),
         clientId: q.clientId,
         clientName: client?.name ?? q.clientName,
         clientKey: client ? nameKeyOf(client.name) : q.clientKey,
+        client_name: qRaw.client_name ?? qRaw.contact_person ?? client?.contactPerson,
+        client_company: qRaw.client_company ?? client?.name ?? q.clientName,
+        client_address: qRaw.client_address ?? qRaw.clientAddress ?? client?.address,
+        client_email: qRaw.client_email ?? qRaw.clientEmail ?? client?.email,
+        client_phone: qRaw.client_phone ?? qRaw.clientPhone ?? client?.phone,
+        client_gstin: qRaw.client_gstin ?? qRaw.clientGstin ?? client?.gstin,
+        clientCompany: qRaw.client_company ?? client?.name ?? q.clientName,
+        clientAddress: qRaw.client_address ?? qRaw.clientAddress ?? client?.address,
+        clientEmail: qRaw.client_email ?? qRaw.clientEmail ?? client?.email,
+        clientPhone: qRaw.client_phone ?? qRaw.clientPhone ?? client?.phone,
+        clientGstin: qRaw.client_gstin ?? qRaw.clientGstin ?? client?.gstin,
+        cgst_percent: qRaw.cgst_percent,
+        sgst_percent: qRaw.sgst_percent,
+        igst_percent: qRaw.igst_percent,
+        tax_amount: qRaw.tax_amount ?? q.tax,
+        discount_amount: qRaw.discount_amount ?? q.discount,
+        discount_percent: qRaw.discount_percent,
         quotationId: q.id,
         quotationNumber: q.number,
         items: q.items,
@@ -142,7 +160,18 @@ export default function ProformaInvoicesPage() {
       const [oSeq, iSeq] = await Promise.all([nextSequence('orders'), nextSequence('invoices')]);
       const orderNumber = formatNumber(settings?.orderPrefix ?? 'ORD', oSeq);
       const invoiceNumber = formatNumber(settings?.invoicePrefix ?? 'INV', iSeq);
-      await convertProformaToOrderAndInvoiceAtomic(pi, { orderNumber, invoiceNumber });
+      const billTo = await billToFor(pi);
+      const enrichedPi = {
+        ...pi,
+        client_name: billTo.name || (pi as any).client_name,
+        client_company: billTo.company || (pi as any).client_company || pi.clientName,
+        client_address: billTo.address || (pi as any).client_address,
+        client_email: billTo.email || (pi as any).client_email,
+        client_phone: billTo.phone || (pi as any).client_phone,
+        client_gstin: billTo.gstin || (pi as any).client_gstin,
+        clientName: billTo.company || pi.clientName,
+      };
+      await convertProformaToOrderAndInvoiceAtomic(enrichedPi as ProformaInvoice, { orderNumber, invoiceNumber });
       toast.success(`Converted: order ${orderNumber}, invoice ${invoiceNumber}`);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -172,8 +201,39 @@ export default function ProformaInvoicesPage() {
   const downloadPdf = async (pi: ProformaInvoice) => {
     const id = toast.loading('Generating PDF…');
     try {
-      const client = await billToFor(pi);
-      const doc = await generateProformaInvoicePdf('', pi, client as any);
+      const billTo = await billToFor(pi);
+      const raw = pi as any;
+      const proformaPayload = {
+        ...pi,
+        number: pi.number,
+        issue_date: pi.issueDate ?? pi.createdAt?.slice(0, 10),
+        valid_until: pi.validUntil,
+        client_name: billTo.name || raw.client_name || pi.clientName,
+        clientName: billTo.name || raw.client_name || pi.clientName,
+        client_company: billTo.company || raw.client_company || pi.clientName,
+        clientCompany: billTo.company || raw.client_company || pi.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        amount: pi.total,
+        total: pi.total,
+        items: (pi.items ?? []).map((it: any) => ({
+          name: it.name || it.description || '',
+          description: it.description || '',
+          quantity: Number(it.quantity) || 1,
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
+        })),
+        notes: pi.notes,
+      };
+      const doc = await generateProformaInvoicePdf('', proformaPayload, billTo as any);
       await savePdf(doc, `Proforma-${pi.number || pi.id}.pdf`);
       toast.success('Proforma downloaded', { id });
     } catch (e) {
@@ -184,8 +244,39 @@ export default function ProformaInvoicesPage() {
   const previewPdf = async (pi: ProformaInvoice) => {
     const id = toast.loading('Generating preview…');
     try {
-      const client = await billToFor(pi);
-      const doc = await generateProformaInvoicePdf('', pi, client as any);
+      const billTo = await billToFor(pi);
+      const raw = pi as any;
+      const proformaPayload = {
+        ...pi,
+        number: pi.number,
+        issue_date: pi.issueDate ?? pi.createdAt?.slice(0, 10),
+        valid_until: pi.validUntil,
+        client_name: billTo.name || raw.client_name || pi.clientName,
+        clientName: billTo.name || raw.client_name || pi.clientName,
+        client_company: billTo.company || raw.client_company || pi.clientName,
+        clientCompany: billTo.company || raw.client_company || pi.clientName,
+        client_address: billTo.address || raw.client_address || raw.clientAddress || '',
+        clientAddress: billTo.address || raw.client_address || raw.clientAddress || '',
+        client_email: billTo.email || raw.client_email || raw.clientEmail || '',
+        clientEmail: billTo.email || raw.client_email || raw.clientEmail || '',
+        client_phone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        clientPhone: billTo.phone || raw.client_phone || raw.clientPhone || '',
+        client_gstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        clientGstin: billTo.gstin || raw.client_gstin || raw.clientGstin || '',
+        amount: pi.total,
+        total: pi.total,
+        items: (pi.items ?? []).map((it: any) => ({
+          name: it.name || it.description || '',
+          description: it.description || '',
+          quantity: Number(it.quantity) || 1,
+          unit: it.unit || 'pcs',
+          unit_price: Number(it.unitPrice ?? it.unit_price) || 0,
+          unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+          total: Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unitPrice ?? it.unit_price) || 0),
+        })),
+        notes: pi.notes,
+      };
+      const doc = await generateProformaInvoicePdf('', proformaPayload, billTo as any);
       const url = await openPdfPreview(doc);
       window.open(url, '_blank');
       toast.dismiss(id);
@@ -386,7 +477,7 @@ export default function ProformaInvoicesPage() {
                   )}
                   <div className="sm:col-span-2">
                     <span className="text-muted-foreground">Items: </span>
-                    {preview.items.map((i) => `${i.description} ×${i.quantity}`).join('; ')}
+                    {preview.items.map((i: any) => `${i.name || i.description || 'Item'} ×${i.quantity}`).join('; ')}
                   </div>
                 </div>
               ),
