@@ -59,29 +59,83 @@ function formatAmtS(amount: number, fs: FormatSettings): string {
   return formatMoney(amount, { ...fs, symbol });
 }
 
-async function addLogo(doc: jsPDF, url: string | undefined | null): Promise<number> {
-  if (!url) return M;
-  try {
-    const data = await getBase64ImageFromURL(url);
-    const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
-      img.onerror = () => reject(new Error('logo decode failed'));
-      img.src = data;
-    });
-    // Fit inside 35x24.5mm box, preserving aspect ratio
-    const ratio = size.w / size.h;
-    let drawW = 35;
-    let drawH = drawW / ratio;
-    if (drawH > 24.5) {
-      drawH = 24.5;
+async function drawBrandHeader(
+  doc: jsPDF,
+  s: CompanySettings,
+  style: string,
+  primaryRgb: [number, number, number]
+): Promise<number> {
+  const url = s.logo_url || brand.logo;
+  let drawW = 0;
+  let drawH = 0;
+
+  if (url) {
+    try {
+      const data = await getBase64ImageFromURL(url);
+      const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+        if (typeof Image !== 'undefined') {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+          img.onerror = () => reject(new Error('logo decode failed'));
+          img.src = data;
+        } else {
+          resolve({ w: 1, h: 1 });
+        }
+      });
+      // Brand mark height: 21mm (matches the height of the right-hand text block)
+      const ratio = (size.w || 1) / (size.h || 1);
+      drawH = 21;
       drawW = drawH * ratio;
+      if (drawW > 25) {
+        drawW = 25;
+        drawH = drawW / ratio;
+      }
+      doc.addImage(data, 'PNG', M, M, drawW, drawH);
+    } catch {
+      drawW = 0;
+      drawH = 0;
     }
-    doc.addImage(data, 'PNG', M, M, drawW, drawH);
-    return M + drawH + 3.5;
-  } catch {
-    return M;
   }
+
+  // Anchor text to the right of logo (with 4.5mm spacing), or left margin M if logo not available
+  const textX = drawW > 0 ? M + drawW + 4.5 : M;
+
+  // 1. Company Name: LENTONE (bold, brand gold #c38d27)
+  const rawName = s.company_name || 'LENTONE';
+  const companyTitle = rawName.toLowerCase().includes('lentone') ? 'LENTONE' : rawName;
+  const brandGold: [number, number, number] = [195, 141, 39];
+  doc.setFontSize(17).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : brandGold));
+  doc.text(companyTitle, textX, M + 5.5);
+
+  // 2. Tagline: PREMIUM CLEANING AND HYGIENE SOLUTIONS
+  const tagline = (s.tagline && s.tagline !== 'Your Professional Solution Partner' ? s.tagline : 'PREMIUM CLEANING AND HYGIENE SOLUTIONS').toUpperCase();
+  doc.setFontSize(7).setFont('helvetica', 'bold').setTextColor(115, 115, 115);
+  doc.text(tagline, textX, M + 9.5);
+
+  // 3. Address Lines
+  const rawAddr = s.address || 'Padur, Rajiv Gandhi Salai (OMR),\nChennai – 603103';
+  let addrLines: string[] = [];
+  if (rawAddr.includes('\n')) {
+    addrLines = rawAddr.split('\n').map((l: string) => l.trim()).filter(Boolean);
+  } else if (rawAddr.toUpperCase().includes('PADUR') && rawAddr.toUpperCase().includes('CHENNAI')) {
+    addrLines = ['Padur, Rajiv Gandhi Salai (OMR),', 'Chennai – 603103'];
+  } else {
+    addrLines = doc.splitTextToSize(rawAddr, 75);
+  }
+
+  doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(...C_DARK);
+  let addrY = M + 14;
+  for (const line of addrLines.slice(0, 2)) {
+    doc.text(line, textX, addrY);
+    addrY += 4;
+  }
+
+  const bottomY = Math.max(M + drawH, addrY);
+  return bottomY + 2;
+}
+
+async function addLogo(doc: jsPDF, url: string | undefined | null): Promise<number> {
+  return drawBrandHeader(doc, {} as any, 'modern', [37, 99, 235]);
 }
 
 async function applyLogoWatermark(doc: jsPDF, url: string | undefined | null): Promise<void> {
@@ -157,13 +211,7 @@ export async function generateQuotationPdf(
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
-  let startY = await addLogo(doc, s.logo_url || brand.logo);
-
-  if (startY === M) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
-    doc.text(s.company_name || 'Company', M, M + 5);
-    startY = M + 12;
-  }
+  let startY = await drawBrandHeader(doc, s, style, primaryRgb);
 
   // Right Title
   const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
@@ -187,12 +235,12 @@ export async function generateQuotationPdf(
     }
   }
 
-  const topSectionY = Math.max(startY, yR) + 12;
+  const topSectionY = Math.max(startY, yR) + 6;
   drawDivider(doc, topSectionY);
 
   // ── Addresses ──────────────────────────────────────────────────────────────
-  let yL = topSectionY + 10;
-  let yBT = topSectionY + 10;
+  let yL = topSectionY + 8;
+  let yBT = topSectionY + 8;
 
   // FROM
   doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
@@ -397,13 +445,7 @@ export async function generateInvoicePdf(
     doc.rect(0, 0, PW, 4, 'F');
   }
 
-  let startY = await addLogo(doc, s.logo_url || brand.logo);
-
-  if (startY === M) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
-    doc.text(s.company_name || 'Company', M, M + 5);
-    startY = M + 12;
-  }
+  let startY = await drawBrandHeader(doc, s, style, primaryRgb);
 
   const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
@@ -422,12 +464,12 @@ export async function generateInvoicePdf(
     doc.text(`Due Date: ${formatDateS(dueDate, fs)}`, RX, yR, { align: 'right' }); yR += 5;
   }
 
-  const topSectionY = Math.max(startY, yR) + 12;
+  const topSectionY = Math.max(startY, yR) + 6;
   drawDivider(doc, topSectionY);
 
   // Addresses
-  let yL = topSectionY + 10;
-  let yBT = topSectionY + 10;
+  let yL = topSectionY + 8;
+  let yBT = topSectionY + 8;
 
   // FROM
   doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));
@@ -653,12 +695,7 @@ export async function generateProformaInvoicePdf(
     doc.rect(0, 0, PW, 4, 'F');
   }
 
-  let startY = await addLogo(doc, s.logo_url || brand.logo);
-  if (startY === M) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
-    doc.text(s.company_name || 'Company', M, M + 5);
-    startY = M + 12;
-  }
+  let startY = await drawBrandHeader(doc, s, style, primaryRgb);
 
   const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(22).setFont('helvetica', 'bold').setTextColor(...titleColor);
@@ -680,7 +717,7 @@ export async function generateProformaInvoicePdf(
     doc.text(`Status: ${proforma.status}`, RX, yR, { align: 'right' }); yR += 5;
   }
 
-  const topSectionY = Math.max(startY, yR) + 12;
+  const topSectionY = Math.max(startY, yR) + 6;
   drawDivider(doc, topSectionY);
 
   let yL = topSectionY + 10;
@@ -847,13 +884,7 @@ export async function generateContractPdf(
     doc.rect(0, 0, PW, 4, 'F');
   }
 
-  let startY = await addLogo(doc, s.logo_url || brand.logo);
-
-  if (startY === M) {
-    doc.setFontSize(18).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_DARK));
-    doc.text(s.company_name || 'Company', M, M + 5);
-    startY = M + 12;
-  }
+  let startY = await drawBrandHeader(doc, s, style, primaryRgb);
 
   const titleColor = style === 'corporate' ? primaryRgb : C_DARK;
   doc.setFontSize(24).setFont('helvetica', 'bold').setTextColor(...titleColor);
@@ -864,12 +895,12 @@ export async function generateContractPdf(
   doc.text(`Ref: ${contract.contract_number}`, RX, yR, { align: 'right' }); yR += 5;
   doc.text(`Date: ${formatDateS(contract.created_at, fs)}`, RX, yR, { align: 'right' }); yR += 5;
 
-  const topSectionY = Math.max(startY, yR) + 12;
+  const topSectionY = Math.max(startY, yR) + 6;
   drawDivider(doc, topSectionY);
 
   // Addresses
-  let yL = topSectionY + 10;
-  let yBT = topSectionY + 10;
+  let yL = topSectionY + 8;
+  let yBT = topSectionY + 8;
 
   // ISSUER
   doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(...(style === 'corporate' ? primaryRgb : C_LIGHT));

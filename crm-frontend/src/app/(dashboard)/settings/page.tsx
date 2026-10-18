@@ -164,13 +164,19 @@ export default function SettingsPage() {
               <Input value={form.companyName} onChange={(e) => set('companyName', e.target.value)} />
             </div>
             <div className="grid gap-1.5">
+              <Label>Tagline / Subtitle</Label>
+              <Input value={form.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} placeholder="PREMIUM CLEANING AND HYGIENE SOLUTIONS" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
               <Label>GSTIN</Label>
               <Input value={form.gstin ?? ''} onChange={(e) => set('gstin', e.target.value)} placeholder="32ABCDE1234F1Z5" />
             </div>
-          </div>
-          <div className="grid gap-1.5">
-            <Label>Address</Label>
-            <Input value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} />
+            <div className="grid gap-1.5">
+              <Label>Address</Label>
+              <Input value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} />
+            </div>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="grid gap-1.5">

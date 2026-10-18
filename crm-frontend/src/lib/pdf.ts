@@ -198,11 +198,15 @@ function buildHtml(opts: PdfDocOptions): string {
 
 <!-- HEADER -->
 <div style="background:${headerBg};color:${headerText};padding:24px 40px;display:flex;justify-content:space-between;align-items:flex-start;${style === 'minimal' ? `border-bottom:3px solid ${primary}` : ''}">
-  <div>
-    ${s.logo ? `<img src="${esc(s.logo)}" style="height:40px;object-fit:contain;margin-bottom:8px;display:block" crossorigin="anonymous"/>` : ''}
-    <div style="font-size:20px;font-weight:700;color:${headerText}">${esc(s.companyName || 'Company')}</div>
-    ${companySubline ? `<div style="font-size:11.5px;opacity:0.8;margin-top:3px">${esc(companySubline)}</div>` : ''}
-    ${s.companyWebsite ? `<div style="font-size:11px;opacity:0.7;margin-top:2px">${esc(s.companyWebsite)}</div>` : ''}
+  <div style="display:flex;align-items:center;gap:16px">
+    <img src="${esc(s.logo || '/logo.png')}" style="height:56px;width:56px;object-fit:contain;display:block" crossorigin="anonymous"/>
+    <div>
+      <div style="font-size:22px;font-weight:800;color:${style === 'corporate' ? headerText : '#c38d27'};line-height:1.1">${esc(s.companyName?.toLowerCase().includes('lentone') ? 'LENTONE' : (s.companyName || 'LENTONE'))}</div>
+      <div style="font-size:8.5px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:${style === 'corporate' ? 'rgba(255,255,255,0.85)' : '#737373'};margin-top:3px">${esc(s.tagline || 'PREMIUM CLEANING AND HYGIENE SOLUTIONS')}</div>
+      <div style="font-size:11px;color:${style === 'corporate' ? 'rgba(255,255,255,0.9)' : '#334155'};margin-top:4px;line-height:1.4">
+        Padur, Rajiv Gandhi Salai (OMR),<br/>Chennai – 603103
+      </div>
+    </div>
   </div>
   <div style="text-align:right">
     <div style="font-size:22px;font-weight:800;letter-spacing:1px;color:${headerText}">${opts.kind}${statusBadge(opts.status)}</div>
@@ -426,7 +430,8 @@ export async function exportSimplePdf(
 ): Promise<void> {
   const { title, settings: optsSettings, clientName, ...rest } = opts;
   const defaultSettings: AppSettings = {
-    companyName: 'Company',
+    companyName: 'Lentone Consumer Products',
+    tagline: 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
     primaryColor: '#2563eb',
     templateStyle: 'modern',
     taxRate: 0,

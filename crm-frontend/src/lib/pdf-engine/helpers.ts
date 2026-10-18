@@ -3,12 +3,12 @@ import { getWorkspaceSettings } from '@/lib/settings/api';
 import { getSettings } from '@/lib/db';
 
 const DEFAULT_SETTINGS: CompanySettings = {
-  company_name: 'Lentone Foods Distribution',
-  legal_name: 'Your Legal Name',
-  tagline: 'Your Professional Solution Partner',
-  address: '',
-  phone: '',
-  email: '',
+  company_name: 'Lentone Consumer Products',
+  legal_name: 'Lentone Consumer Products',
+  tagline: 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
+  address: 'Padur, Rajiv Gandhi Salai (OMR), Chennai – 603103',
+  phone: '+91 74489 98628',
+  email: 'aathishpirate@gmail.com',
   website: '',
   logo_url: '',
   footer_logo_url: '',
@@ -73,7 +73,7 @@ export async function getCompanySettings(workspaceId?: string): Promise<CompanyS
     // ignore
   }
 
-  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone Foods Distribution';
+  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone Consumer Products';
   const primaryColor = appSettings?.primaryColor || workspace?.branding?.primary_color || '#2563eb';
   const currencySymbol = appSettings?.currency || workspace?.general?.currency_symbol || '₹';
   const defaultCurrency = currencySymbol === '₹' ? 'INR' : (currencySymbol || workspace?.general?.default_currency || 'INR');
@@ -84,8 +84,8 @@ export async function getCompanySettings(workspaceId?: string): Promise<CompanyS
     ...DEFAULT_SETTINGS,
     company_name: companyName,
     legal_name: workspace?.general?.legal_name || companyName,
-    tagline: workspace?.general?.tagline || 'Your Professional Solution Partner',
-    address: appSettings?.address || workspace?.branding?.address || '',
+    tagline: appSettings?.tagline || workspace?.general?.tagline || 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
+    address: appSettings?.address || workspace?.branding?.address || 'Padur, Rajiv Gandhi Salai (OMR), Chennai – 603103',
     phone: appSettings?.companyPhone || workspace?.branding?.phone || '',
     email: appSettings?.companyEmail || workspace?.branding?.email || '',
     website: appSettings?.companyWebsite || workspace?.branding?.website || '',

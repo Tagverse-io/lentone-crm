@@ -373,6 +373,7 @@ export type PdfTemplateStyle = 'modern' | 'corporate' | 'minimal';
 export interface AppSettings {
   companyName: string;
   logo?: string;
+  tagline?: string;
   address?: string;
   gstin?: string;
   taxRate: number; // percent, e.g. 18
@@ -403,9 +404,10 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  companyName: "Lentone Foods Distribution",
-  address: "",
-  gstin: "",
+  companyName: "Lentone Consumer Products",
+  tagline: "PREMIUM CLEANING AND HYGIENE SOLUTIONS",
+  address: "Padur, Rajiv Gandhi Salai (OMR), Chennai – 603103",
+  gstin: "33OHMPS7204B1Z6",
   taxRate: 18,
   currency: "₹",
   invoicePrefix: "INV",
@@ -421,8 +423,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customFields: { clients: [], leads: [], products: [] },
   primaryColor: "#2563eb",
   templateStyle: "modern",
-  companyPhone: "",
-  companyEmail: "",
+  companyPhone: "+91 74489 98628",
+  companyEmail: "aathishpirate@gmail.com",
   companyWebsite: "",
   bankName: "",
   bankAccount: "",
