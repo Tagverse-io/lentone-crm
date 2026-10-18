@@ -194,6 +194,7 @@ export interface Order {
   clientKey?: string;
   taskId?: string;
   quotationId?: string;
+  proformaInvoiceId?: string;
   invoiceId?: string;
   deliveryId?: string;
   items: OrderLineItem[];
@@ -239,6 +240,38 @@ export interface Quotation {
   notes?: string;
   orderId?: string;
   invoiceId?: string;
+  proformaInvoiceId?: string;
+  legacy?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const PROFORMA_STATUSES = ["Draft", "Sent", "Accepted", "Invoiced", "Cancelled"] as const;
+export type ProformaStatus = (typeof PROFORMA_STATUSES)[number];
+
+export interface ProformaInvoice {
+  id: string;
+  number: string;
+  numberKey?: string;
+  quotationId?: string;
+  quotationNumber?: string;
+  clientId: string;
+  clientName?: string;
+  clientKey?: string;
+  items: QuotationLineItem[];
+  subtotal: number;
+  tax: number;
+  discount: number;
+  total: number;
+  currency?: string;
+  status: ProformaStatus;
+  orderId?: string;
+  invoiceId?: string;
+  issueDate?: string; // YYYY-MM-DD
+  validUntil?: string; // YYYY-MM-DD
+  notes?: string;
+  terms?: string;
+  custom?: Record<string, CustomValue>;
   legacy?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -255,6 +288,7 @@ export interface Invoice {
   clientName?: string;
   clientKey?: string;
   quotationId?: string;
+  proformaInvoiceId?: string;
   orderId?: string;
   items: QuotationLineItem[];
   subtotal: number;
@@ -405,6 +439,7 @@ export type CollectionPath =
   | "stockMovements"
   | "orders"
   | "quotations"
+  | "proformaInvoices"
   | "invoices"
   | "payments"
   | "deliveries";
@@ -1051,6 +1086,164 @@ export async function convertQuotationAtomic(
   return { orderId, invoiceId };
 }
 
+/** Pure builder: converts quotation → proforma invoice. Does NOT deduct stock. */
+export function buildConvertQuotationToProformaUpdate(
+  quotation: Quotation,
+  args: { proformaNumber: string; by?: string },
+): { updates: Record<string, unknown>; proformaId: string } {
+  const stamp = nowIso();
+  const rid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  const proformaId = rid();
+  const updates: Record<string, unknown> = {};
+
+  updates[`proformaInvoices/${proformaId}`] = clean({
+    number: args.proformaNumber,
+    numberKey: nameKeyOf(args.proformaNumber),
+    quotationId: quotation.id,
+    quotationNumber: quotation.number,
+    clientId: quotation.clientId,
+    clientName: quotation.clientName,
+    clientKey: quotation.clientName ? nameKeyOf(quotation.clientName) : undefined,
+    items: quotation.items,
+    subtotal: quotation.subtotal,
+    tax: quotation.tax,
+    discount: quotation.discount,
+    total: quotation.total,
+    status: "Accepted",
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+
+  const hist = (msg: string, detail?: string) => ({ action: msg, detail, at: stamp, ...(args.by ? { by: args.by } : {}) });
+  updates[`quotations/${quotation.id}/status`] = "Accepted";
+  updates[`quotations/${quotation.id}/proformaInvoiceId`] = proformaId;
+  updates[`quotations/${quotation.id}/updatedAt`] = stamp;
+  updates[`history/quotations/${quotation.id}/${rid()}`] = hist("Converted to proforma invoice", args.proformaNumber);
+  updates[`history/proformaInvoices/${proformaId}/${rid()}`] = hist("Proforma created", `From quotation ${quotation.number}`);
+
+  return { updates, proformaId };
+}
+
+export async function convertQuotationToProformaAtomic(
+  quotation: Quotation,
+  args: { proformaNumber: string; by?: string },
+): Promise<{ proformaId: string }> {
+  const db = getFirebaseDatabase();
+  const { updates, proformaId } = buildConvertQuotationToProformaUpdate(quotation, args);
+  await update(ref(db), updates);
+  return { proformaId };
+}
+
+/** Pure builder: converts proforma invoice → order + final invoice (deducts stock). */
+export function buildConvertProformaToInvoiceUpdate(
+  proforma: ProformaInvoice,
+  products: AssignWorkProduct[],
+  args: { orderNumber: string; invoiceNumber: string; taskId?: string; deliveryId?: string; by?: string },
+): { updates: Record<string, unknown>; ids: { orderId: string; invoiceId: string } } {
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const short: { productId: string; name: string; need: number; have: number }[] = [];
+  for (const it of proforma.items) {
+    if (!it.productId) continue;
+    const p = byId.get(it.productId);
+    if (!p) throw new Error(`Product not found: ${it.productId}`);
+    if (p.stock < (Number(it.quantity) || 0)) {
+      short.push({ productId: p.id, name: p.name, need: Number(it.quantity) || 0, have: p.stock });
+    }
+  }
+  if (short.length > 0) throw new InsufficientStockError(short);
+
+  const stamp = nowIso();
+  const rid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  const orderId = rid();
+  const invoiceId = rid();
+  const updates: Record<string, unknown> = {};
+
+  updates[`orders/${orderId}`] = clean({
+    number: args.orderNumber,
+    numberKey: nameKeyOf(args.orderNumber),
+    clientId: proforma.clientId,
+    clientName: proforma.clientName,
+    clientKey: proforma.clientName ? nameKeyOf(proforma.clientName) : undefined,
+    taskId: args.taskId,
+    quotationId: proforma.quotationId,
+    proformaInvoiceId: proforma.id,
+    invoiceId,
+    deliveryId: args.deliveryId,
+    items: proforma.items,
+    subtotal: proforma.subtotal,
+    tax: proforma.tax,
+    discount: proforma.discount,
+    total: proforma.total,
+    status: "Confirmed",
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+
+  updates[`invoices/${invoiceId}`] = clean({
+    number: args.invoiceNumber,
+    numberKey: nameKeyOf(args.invoiceNumber),
+    clientId: proforma.clientId,
+    clientName: proforma.clientName,
+    clientKey: proforma.clientName ? nameKeyOf(proforma.clientName) : undefined,
+    quotationId: proforma.quotationId,
+    proformaInvoiceId: proforma.id,
+    orderId,
+    items: proforma.items,
+    subtotal: proforma.subtotal,
+    tax: proforma.tax,
+    discount: proforma.discount,
+    total: proforma.total,
+    amountPaid: 0,
+    status: "Unpaid",
+    createdAt: stamp,
+    updatedAt: stamp,
+  });
+
+  for (const it of proforma.items) {
+    if (!it.productId) continue;
+    const p = byId.get(it.productId)!;
+    updates[`products/${p.id}/stock`] = p.stock - (Number(it.quantity) || 0);
+    updates[`products/${p.id}/updatedAt`] = stamp;
+    updates[`stockMovements/${rid()}`] = {
+      productId: p.id,
+      productName: p.name,
+      delta: -(Number(it.quantity) || 0),
+      reason: `Proforma ${proforma.number} converted → order ${args.orderNumber}`,
+      refType: "order",
+      refId: orderId,
+      createdAt: stamp,
+    };
+  }
+
+  const hist = (msg: string, detail?: string) => ({ action: msg, detail, at: stamp, ...(args.by ? { by: args.by } : {}) });
+  updates[`proformaInvoices/${proforma.id}/status`] = "Invoiced";
+  updates[`proformaInvoices/${proforma.id}/orderId`] = orderId;
+  updates[`proformaInvoices/${proforma.id}/invoiceId`] = invoiceId;
+  updates[`proformaInvoices/${proforma.id}/updatedAt`] = stamp;
+  updates[`history/proformaInvoices/${proforma.id}/${rid()}`] = hist("Converted to order + invoice", `${args.orderNumber} / ${args.invoiceNumber}`);
+  updates[`history/orders/${orderId}/${rid()}`] = hist("Order created", `From proforma invoice ${proforma.number}`);
+  updates[`history/invoices/${invoiceId}/${rid()}`] = hist("Invoice created", `${args.invoiceNumber} · Unpaid`);
+
+  return { updates, ids: { orderId, invoiceId } };
+}
+
+export async function convertProformaToOrderAndInvoiceAtomic(
+  proforma: ProformaInvoice,
+  args: { orderNumber: string; invoiceNumber: string; taskId?: string; deliveryId?: string; by?: string },
+): Promise<{ orderId: string; invoiceId: string }> {
+  const db = getFirebaseDatabase();
+  const snap = await get(ref(db, "products"));
+  const products = toList<Product>(snap.val()).map((p) => ({
+    id: p.id,
+    name: p.name ?? "(unnamed)",
+    price: Number(p.price) || 0,
+    stock: Number(p.stock) || 0,
+  }));
+  const { updates, ids } = buildConvertProformaToInvoiceUpdate(proforma, products, args);
+  await update(ref(db), updates);
+  return ids;
+}
+
 // ----- Typed collection shortcuts (polling reads) -----
 
 export async function listClients(): Promise<Client[]> {
@@ -1067,6 +1260,9 @@ export async function listFieldTasks(): Promise<FieldTask[]> {
 }
 export async function listQuotations(): Promise<Quotation[]> {
   return getCollection<Quotation>("quotations");
+}
+export async function listProformaInvoices(): Promise<ProformaInvoice[]> {
+  return getCollection<ProformaInvoice>("proformaInvoices");
 }
 export async function listInvoices(): Promise<Invoice[]> {
   return getCollection<Invoice>("invoices");

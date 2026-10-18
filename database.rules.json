@@ -26,6 +26,9 @@
     "quotations": {
       ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId"]
     },
+    "proformaInvoices": {
+      ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId", "quotationId"]
+    },
     "invoices": {
       ".indexOn": ["createdAt", "numberKey", "clientKey", "status", "clientId"]
     },

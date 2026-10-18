@@ -7,6 +7,8 @@ import {
   COUNTER_MINIMUMS,
   computeNextSequence,
   buildAssignWorkUpdate,
+  buildConvertQuotationToProformaUpdate,
+  buildConvertProformaToInvoiceUpdate,
   calcTotals,
   deriveInvoiceStatus,
   fmtMoney,
@@ -131,6 +133,64 @@ check(
   threw instanceof InsufficientStockError && threw.short[0]?.name === "Oil Can",
   threw instanceof InsufficientStockError ? threw.short : threw,
 );
+
+// --- proforma atomic builders ---
+const testQuote = {
+  id: "q1",
+  number: "QUO-2026-2134",
+  clientId: "c1",
+  clientName: "Client One",
+  items: [
+    { productId: "p1", description: "Rice Bag", quantity: 2, unitPrice: 100 },
+  ],
+  subtotal: 200,
+  tax: 36,
+  discount: 0,
+  total: 236,
+  status: "Sent" as const,
+  createdAt: "2026-10-18T10:00:00.000Z",
+  updatedAt: "2026-10-18T10:00:00.000Z",
+};
+
+const proformaBuilt = buildConvertQuotationToProformaUpdate?.(testQuote, {
+  proformaNumber: "PI-2026-1546",
+});
+const piPaths = proformaBuilt ? Object.keys(proformaBuilt.updates) : [];
+check("quote -> proforma creates proforma record", piPaths.some((p) => p.startsWith("proformaInvoices/")));
+check("quote -> proforma marks quote accepted", proformaBuilt?.updates?.["quotations/q1/status"] === "Accepted");
+check("quote -> proforma does NOT deduct stock", !piPaths.some((p) => p.includes("stock")));
+
+const testProforma = {
+  id: proformaBuilt?.proformaId ?? "pi1",
+  number: "PI-2026-1546",
+  clientId: "c1",
+  clientName: "Client One",
+  items: [
+    { productId: "p1", description: "Rice Bag", quantity: 2, unitPrice: 100 },
+  ],
+  subtotal: 200,
+  tax: 36,
+  discount: 0,
+  total: 236,
+  status: "Accepted" as const,
+  createdAt: "2026-10-18T11:00:00.000Z",
+  updatedAt: "2026-10-18T11:00:00.000Z",
+};
+
+const proformaToInvBuilt = buildConvertProformaToInvoiceUpdate?.(
+  testProforma,
+  products,
+  {
+    orderNumber: "ORD-2026-0002",
+    invoiceNumber: "INV-2026-0751",
+  }
+);
+const p2iPaths = proformaToInvBuilt ? Object.keys(proformaToInvBuilt.updates) : [];
+check("proforma -> invoice creates order", p2iPaths.some((p) => p.startsWith("orders/")));
+check("proforma -> invoice creates invoice", p2iPaths.some((p) => p.startsWith("invoices/")));
+check("proforma -> invoice marks proforma invoiced", proformaToInvBuilt?.updates?.[`proformaInvoices/${testProforma.id}/status`] === "Invoiced");
+check("proforma -> invoice deducts stock 10->8", proformaToInvBuilt?.updates?.["products/p1/stock"] === 8);
+check("proforma -> invoice records stock movement", p2iPaths.some((p) => p.startsWith("stockMovements/")));
 
 if (failures > 0) {
   console.error(`${failures} failure(s)`);
