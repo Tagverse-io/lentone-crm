@@ -26,31 +26,21 @@ export async function getInvoice(invoiceId: string): Promise<Invoice | null> {
   }
 }
 
-export async function createInvoice(invoice: any): Promise<string | null> {
-  try {
-    const id = await createItem('invoices', {
-      ...invoice,
-      createdAt: invoice.created_at || invoice.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    return id;
-  } catch (err) {
-    console.error('Error creating invoice:', err);
-    return null;
-  }
+export async function createInvoice(invoice: any): Promise<string> {
+  const id = await createItem('invoices', {
+    ...invoice,
+    createdAt: invoice.created_at || invoice.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return id;
 }
 
 export async function updateInvoice(invoiceId: string, updates: any): Promise<boolean> {
-  try {
-    await updateItem('invoices', invoiceId, {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    });
-    return true;
-  } catch (err) {
-    console.error('Error updating invoice:', err);
-    return false;
-  }
+  await updateItem('invoices', invoiceId, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 export async function getQuotations(workspaceId?: string): Promise<Quotation[]> {
@@ -69,31 +59,21 @@ export async function getQuotation(quotationId: string): Promise<Quotation | nul
   }
 }
 
-export async function createQuotation(quotation: any): Promise<string | null> {
-  try {
-    const id = await createItem('quotations', {
-      ...quotation,
-      createdAt: quotation.created_at || quotation.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    return id;
-  } catch (err) {
-    console.error('Error creating quotation:', err);
-    return null;
-  }
+export async function createQuotation(quotation: any): Promise<string> {
+  const id = await createItem('quotations', {
+    ...quotation,
+    createdAt: quotation.created_at || quotation.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return id;
 }
 
 export async function updateQuotation(quotationId: string, updates: any): Promise<boolean> {
-  try {
-    await updateItem('quotations', quotationId, {
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    });
-    return true;
-  } catch (err) {
-    console.error('Error updating quotation:', err);
-    return false;
-  }
+  await updateItem('quotations', quotationId, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 export async function getContracts(workspaceId?: string): Promise<Contract[]> {

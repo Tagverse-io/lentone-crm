@@ -10,6 +10,7 @@
  */
 import { ref, get, set } from 'firebase/database';
 import { database } from '@/lib/firebase/config';
+import { deepClean } from '@/lib/db';
 import {
   WorkspaceSettings,
   DEFAULT_WORKSPACE_SETTINGS,
@@ -72,8 +73,9 @@ export async function saveWorkspaceSettings(workspaceId: string, settings: Works
   if (!workspaceId) return false;
   try {
     const settingsRef = ref(database, getSettingsPath(workspaceId));
-    await set(settingsRef, { ...settings, updated_at: new Date().toISOString() });
-    cachedSettingsMap[workspaceId] = { ...settings, updated_at: new Date().toISOString() };
+    const payload = deepClean({ ...settings, updated_at: new Date().toISOString() });
+    await set(settingsRef, payload);
+    cachedSettingsMap[workspaceId] = payload;
     return true;
   } catch (error) {
     console.error('Error saving workspace settings:', error);

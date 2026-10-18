@@ -942,7 +942,11 @@ export async function assignWorkAtomic(input: AssignWorkInput, taxRate: number):
     stock: Number(p.stock) || 0,
   }));
   const { updates, ids } = buildAssignWorkUpdate(input, products, taxRate);
-  await update(ref(getFirebaseDatabase()), updates);
+  await update(ref(getFirebaseDatabase()), deepClean(updates));
+  invalidateCountCache("tasks");
+  invalidateCountCache("orders");
+  invalidateCountCache("deliveries");
+  invalidateCountCache("invoices");
   return { ...input, ...ids };
 }
 
@@ -1106,7 +1110,10 @@ export async function convertQuotationAtomic(
   updates[`history/quotations/${quotation.id}/${rid()}`] = hist("Converted to order + invoice", `${args.orderNumber} / ${args.invoiceNumber}`);
   updates[`history/orders/${orderId}/${rid()}`] = hist("Order created", `From quotation ${quotation.number}`);
   updates[`history/invoices/${invoiceId}/${rid()}`] = hist("Invoice created", `${args.invoiceNumber} · Unpaid`);
-  await update(ref(db), updates);
+  await update(ref(db), deepClean(updates));
+  invalidateCountCache("orders");
+  invalidateCountCache("invoices");
+  invalidateCountCache("quotations");
   return { orderId, invoiceId };
 }
 
@@ -1154,7 +1161,9 @@ export async function convertQuotationToProformaAtomic(
 ): Promise<{ proformaId: string }> {
   const db = getFirebaseDatabase();
   const { updates, proformaId } = buildConvertQuotationToProformaUpdate(quotation, args);
-  await update(ref(db), updates);
+  await update(ref(db), deepClean(updates));
+  invalidateCountCache("proformaInvoices");
+  invalidateCountCache("quotations");
   return { proformaId };
 }
 
@@ -1264,7 +1273,10 @@ export async function convertProformaToOrderAndInvoiceAtomic(
     stock: Number(p.stock) || 0,
   }));
   const { updates, ids } = buildConvertProformaToInvoiceUpdate(proforma, products, args);
-  await update(ref(db), updates);
+  await update(ref(db), deepClean(updates));
+  invalidateCountCache("orders");
+  invalidateCountCache("invoices");
+  invalidateCountCache("proformaInvoices");
   return ids;
 }
 
