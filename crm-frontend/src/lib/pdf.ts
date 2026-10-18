@@ -437,7 +437,7 @@ export async function exportSimplePdf(
   const defaultSettings: AppSettings = {
     companyName: 'Lentone Consumer Products',
     tagline: 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
-    primaryColor: '#2563eb',
+    primaryColor: '#C88A2C',
     templateStyle: 'modern',
     taxRate: 0,
     currency: '₹',

@@ -357,20 +357,20 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <input
                 type="color"
-                value={form.primaryColor ?? '#2563eb'}
+                value={form.primaryColor ?? '#C88A2C'}
                 onChange={(e) => set('primaryColor', e.target.value)}
                 className="h-10 w-14 cursor-pointer rounded border border-input bg-background p-0.5"
                 aria-label="Primary color picker"
               />
               <Input
-                value={form.primaryColor ?? '#2563eb'}
+                value={form.primaryColor ?? '#C88A2C'}
                 onChange={(e) => set('primaryColor', e.target.value)}
-                placeholder="#2563eb"
+                placeholder="#C88A2C"
                 className="max-w-[140px] font-mono text-sm"
               />
               <div
                 className="h-10 flex-1 rounded border border-input"
-                style={{ background: form.primaryColor ?? '#2563eb' }}
+                style={{ background: form.primaryColor ?? '#C88A2C' }}
               />
             </div>
           </div>
@@ -379,15 +379,15 @@ export default function SettingsPage() {
           <div className="grid sm:grid-cols-3 gap-3">
             <div className="grid gap-1.5">
               <Label>Company phone</Label>
-              <Input value={form.companyPhone ?? ''} onChange={(e) => set('companyPhone', e.target.value)} placeholder="+91 98765 43210" />
+              <Input value={form.companyPhone ?? ''} onChange={(e) => set('companyPhone', e.target.value)} placeholder="+91 6374580424" />
             </div>
             <div className="grid gap-1.5">
               <Label>Company email</Label>
-              <Input value={form.companyEmail ?? ''} onChange={(e) => set('companyEmail', e.target.value)} placeholder="billing@company.com" />
+              <Input value={form.companyEmail ?? ''} onChange={(e) => set('companyEmail', e.target.value)} placeholder="lentonecp@gmail.com" />
             </div>
             <div className="grid gap-1.5">
               <Label>Website</Label>
-              <Input value={form.companyWebsite ?? ''} onChange={(e) => set('companyWebsite', e.target.value)} placeholder="https://company.com" />
+              <Input value={form.companyWebsite ?? ''} onChange={(e) => set('companyWebsite', e.target.value)} placeholder="www.lentone.in" />
             </div>
           </div>
 
@@ -395,19 +395,19 @@ export default function SettingsPage() {
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="grid gap-1.5">
               <Label>Bank name</Label>
-              <Input value={form.bankName ?? ''} onChange={(e) => set('bankName', e.target.value)} placeholder="HDFC Bank" />
+              <Input value={form.bankName ?? ''} onChange={(e) => set('bankName', e.target.value)} placeholder="IndusInd Bank" />
             </div>
             <div className="grid gap-1.5">
               <Label>Account number</Label>
-              <Input value={form.bankAccount ?? ''} onChange={(e) => set('bankAccount', e.target.value)} placeholder="0123456789" />
+              <Input value={form.bankAccount ?? ''} onChange={(e) => set('bankAccount', e.target.value)} placeholder="256374580424" />
             </div>
             <div className="grid gap-1.5">
               <Label>IFSC code</Label>
-              <Input value={form.bankIfsc ?? ''} onChange={(e) => set('bankIfsc', e.target.value)} placeholder="HDFC0001234" />
+              <Input value={form.bankIfsc ?? ''} onChange={(e) => set('bankIfsc', e.target.value)} placeholder="INDB0000932" />
             </div>
             <div className="grid gap-1.5">
               <Label>UPI ID</Label>
-              <Input value={form.upiId ?? ''} onChange={(e) => set('upiId', e.target.value)} placeholder="company@upi" />
+              <Input value={form.upiId ?? ''} onChange={(e) => set('upiId', e.target.value)} placeholder="lentone@upi" />
             </div>
           </div>
 

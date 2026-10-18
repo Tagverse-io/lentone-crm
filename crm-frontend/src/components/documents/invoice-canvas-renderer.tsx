@@ -3,10 +3,10 @@
 
 import React, { useEffect, useState, useTransition } from 'react';
 import type { DocumentClient, DocumentMeta, DocumentPricing, DocumentNotes, DocumentPayment } from './types';
-import { generateQuotationPdf, generateInvoicePdf } from '@/lib/pdf-engine/generator';
+import { generateQuotationPdf, generateInvoicePdf, generateProformaInvoicePdf } from '@/lib/pdf-engine/generator';
 
 export interface CanvasRendererProps {
-  docType: 'quotation' | 'invoice' | 'quote';
+  docType: 'quotation' | 'invoice' | 'quote' | 'proforma' | 'proforma-invoice';
   meta: DocumentMeta;
   client: DocumentClient;
   items: {
@@ -55,7 +55,10 @@ export function InvoiceCanvasRenderer({
             client_company: client.company,
             client_address: client.address,
             client_email: client.email,
+            client_phone: client.phone,
+            client_gstin: client.gstin,
             amount: pricing.grand_total,
+            total: pricing.grand_total,
             subtotal: pricing.subtotal,
             discount_percent: pricing.discount_percent,
             discount_amount: pricing.discount_amount,
@@ -65,25 +68,34 @@ export function InvoiceCanvasRenderer({
             igst_percent: pricing.igst_percent,
             status: meta.status as any,
             items: items.map(i => ({
-              description: i.name + (i.description ? `\n${i.description}` : ''),
+              name: i.name,
+              description: i.description || '',
               quantity: i.quantity,
               unit: i.unit || 'pcs',
               unit_price: i.unit_price,
               total: i.total,
             })),
             created_at: meta.issue_date || new Date().toISOString(),
+            issue_date: meta.issue_date || new Date().toISOString(),
             valid_until: meta.valid_until,
             notes: _notes,
+            terms: terms,
           } as any;
           
-          doc = await generateQuotationPdf(fakeQuote, null);
-        } else {
-          // Map to Invoice shape expected by generator
-          const fakeInvoice = {
+          doc = await generateQuotationPdf('', fakeQuote, null);
+        } else if (docType === 'proforma') {
+          const fakeProforma = {
             id: 'preview',
-            invoice_number: meta.document_number,
+            number: meta.document_number,
             client_id: 'preview',
+            client_name: client.contact_person || client.company || 'Client Name',
+            client_company: client.company,
+            client_address: client.address,
+            client_email: client.email,
+            client_phone: client.phone,
+            client_gstin: client.gstin,
             amount: pricing.grand_total,
+            total: pricing.grand_total,
             subtotal: pricing.subtotal,
             tax_amount: pricing.tax_amount,
             discount_percent: pricing.discount_percent,
@@ -93,7 +105,46 @@ export function InvoiceCanvasRenderer({
             igst_percent: pricing.igst_percent,
             status: meta.status as any,
             items: items.map(i => ({
-              description: i.name + (i.description ? `\n${i.description}` : ''),
+              name: i.name,
+              description: i.description || '',
+              quantity: i.quantity,
+              unit: i.unit || 'pcs',
+              unit_price: i.unit_price,
+              total: i.total,
+            })),
+            created_at: meta.issue_date || new Date().toISOString(),
+            issue_date: meta.issue_date || new Date().toISOString(),
+            valid_until: meta.valid_until,
+            notes: _notes,
+            terms: terms,
+          } as any;
+
+          doc = await generateProformaInvoicePdf('', fakeProforma, null);
+        } else {
+          // Map to Invoice shape expected by generator
+          const fakeInvoice = {
+            id: 'preview',
+            invoice_number: meta.document_number,
+            client_id: 'preview',
+            client_name: client.contact_person || client.company || 'Client Name',
+            client_company: client.company,
+            client_address: client.address,
+            client_email: client.email,
+            client_phone: client.phone,
+            client_gstin: client.gstin,
+            amount: pricing.grand_total,
+            total: pricing.grand_total,
+            subtotal: pricing.subtotal,
+            tax_amount: pricing.tax_amount,
+            discount_percent: pricing.discount_percent,
+            discount_amount: pricing.discount_amount,
+            cgst_percent: pricing.cgst_percent,
+            sgst_percent: pricing.sgst_percent,
+            igst_percent: pricing.igst_percent,
+            status: meta.status as any,
+            items: items.map(i => ({
+              name: i.name,
+              description: i.description || '',
               quantity: i.quantity,
               unit: i.unit || 'pcs',
               unit_price: i.unit_price,
@@ -103,14 +154,10 @@ export function InvoiceCanvasRenderer({
             issue_date: meta.issue_date || new Date().toISOString(),
             due_date: meta.due_date,
             notes: _notes,
+            terms: terms,
           } as any;
 
-          const fakeClient = {
-            full_name: client.contact_person || client.company || 'Client Name',
-            email: client.email,
-          } as any;
-
-          doc = await generateInvoicePdf(fakeInvoice, fakeClient, null);
+          doc = await generateInvoicePdf('', fakeInvoice, null, null);
         }
 
         if (!active) return;

@@ -156,30 +156,36 @@ export default function ProformaInvoicesPage() {
     const c = clients.find((x) => x.id === pi.clientId) ?? (await getItem<Client>('clients', pi.clientId).catch(() => null));
     return {
       name: pi.clientName || c?.name,
+      company: c?.name || pi.clientName,
       address: c?.address,
       email: c?.email,
       phone: c?.phone,
+      gstin: c?.gstin,
     };
   };
 
   const downloadPdf = async (pi: ProformaInvoice) => {
+    const id = toast.loading('Generating PDF…');
     try {
       const client = await billToFor(pi);
       const doc = await generateProformaInvoicePdf('', pi, client as any);
       await savePdf(doc, `Proforma-${pi.number || pi.id}.pdf`);
+      toast.success('Proforma downloaded', { id });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF generation failed');
+      toast.error(e instanceof Error ? e.message : 'PDF generation failed', { id });
     }
   };
 
   const previewPdf = async (pi: ProformaInvoice) => {
+    const id = toast.loading('Generating preview…');
     try {
       const client = await billToFor(pi);
       const doc = await generateProformaInvoicePdf('', pi, client as any);
       const url = await openPdfPreview(doc);
       window.open(url, '_blank');
+      toast.dismiss(id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF preview failed');
+      toast.error(e instanceof Error ? e.message : 'PDF preview failed', { id });
     }
   };
 

@@ -271,6 +271,19 @@ function drawItemsTable(
         title = rawDesc;
       }
     }
+    if (!subtitle && title.includes(' - ')) {
+      const parts = title.split(' - ').map((p) => p.trim()).filter(Boolean);
+      title = parts[0] || '';
+      subtitle = parts.slice(1).join(' - ');
+    } else if (!subtitle && title.includes(' – ')) {
+      const parts = title.split(' – ').map((p) => p.trim()).filter(Boolean);
+      title = parts[0] || '';
+      subtitle = parts.slice(1).join(' – ');
+    } else if (!subtitle && title.includes('\n')) {
+      const parts = title.split('\n').map((p) => p.trim()).filter(Boolean);
+      title = parts[0] || '';
+      subtitle = parts.slice(1).join('\n');
+    }
     if (!title) title = 'ITEM';
 
     const descText = subtitle ? `${title.toUpperCase()}\n${subtitle.toUpperCase()}` : title.toUpperCase();
@@ -426,14 +439,21 @@ async function drawBankAndClosing(
   s: CompanySettings,
   meta: HeaderMeta,
   notes?: string,
-  terms?: string
+  terms?: string,
+  customBank?: {
+    bankHolder?: string;
+    bankName?: string;
+    bankAcc?: string;
+    bankIfsc?: string;
+    upiId?: string;
+  }
 ): Promise<void> {
   // Page 2: Dedicated Remittance & Payment Sheet
   doc.addPage();
 
   // Draw repeating brand header on Page 2
   let y = await drawBrandHeader(doc, s, meta);
-  y += 6;
+  y += (notes || terms) ? 6 : 14;
 
   // Notes
   if (notes && notes.trim()) {
@@ -460,10 +480,11 @@ async function drawBankAndClosing(
   }
 
   // BANK DETAILS
-  const bankHolder = s.bank_holder || s.company_name || 'Lentone';
-  const bankName = s.bank_name || 'IndusInd Bank';
-  const bankAcc = s.bank_account || '256374580424';
-  const bankIfsc = s.bank_ifsc || 'INDB0000932';
+  const bankHolder = customBank?.bankHolder || s.bank_holder || s.company_name || 'Lentone';
+  const bankName = customBank?.bankName || s.bank_name || 'IndusInd Bank';
+  const bankAcc = customBank?.bankAcc || s.bank_account || '256374580424';
+  const bankIfsc = customBank?.bankIfsc || s.bank_ifsc || 'INDB0000932';
+  const upiId = customBank?.upiId || s.upi_id;
 
   doc.setFontSize(9.5).setFont('helvetica', 'bold').setTextColor(...BRAND_GOLD);
   doc.text('BANK DETAILS', M, y);
@@ -475,8 +496,8 @@ async function drawBankAndClosing(
     ['Account Number', bankAcc],
     ['IFSC', bankIfsc],
   ];
-  if (s.upi_id) {
-    bankRows.push(['UPI ID', s.upi_id]);
+  if (upiId) {
+    bankRows.push(['UPI ID', upiId]);
   }
 
   autoTable(doc, {
@@ -517,20 +538,29 @@ function addFooter(doc: jsPDF, s: CompanySettings): void {
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
 
+    doc.setDrawColor(...BRAND_GOLD);
+    doc.setLineWidth(0.3);
+    doc.line(M, 281.5, RX, 281.5);
+
     doc.setFontSize(7.5).setFont('helvetica', 'normal').setTextColor(120, 120, 120);
-    doc.text(footerText, M, 286);
-    doc.text(`Page ${p} of ${pages}`, RX, 286, { align: 'right' });
+    doc.text(footerText, M, 286.5);
+    doc.text(`Page ${p} of ${pages}`, RX, 286.5, { align: 'right' });
   }
 }
 
 // ─── Document Generators ──────────────────────────────────────────────────────
 
 export async function generateInvoicePdf(
-  workspaceId: string,
-  invoice: any,
-  client: User | null = null,
-  _project: Project | null = null
+  workspaceIdOrInvoice: string | any,
+  invoiceOrClient?: any,
+  clientOrProject?: any,
+  _project?: any
 ): Promise<jsPDF> {
+  const isFirstObj = typeof workspaceIdOrInvoice === 'object' && workspaceIdOrInvoice !== null;
+  const workspaceId = isFirstObj ? (workspaceIdOrInvoice.workspace_id || '') : (workspaceIdOrInvoice || '');
+  const invoice = isFirstObj ? workspaceIdOrInvoice : (invoiceOrClient || {});
+  const client = isFirstObj ? (invoiceOrClient || null) : (clientOrProject || null);
+
   const s = await getCompanySettings(workspaceId);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -552,7 +582,7 @@ export async function generateInvoicePdf(
   // 2. FROM & BILL TO
   const clientInfo: ClientInfo = {
     name: invoice.client_name || invoice.clientName || client?.full_name || client?.name || '',
-    company: invoice.client_company || invoice.clientCompany || '',
+    company: invoice.client_company || invoice.clientCompany || (client as any)?.company || client?.name || '',
     address: invoice.client_address || invoice.clientAddress || (client as any)?.address || '',
     email: invoice.client_email || invoice.clientEmail || client?.email || '',
     phone: invoice.client_phone || invoice.clientPhone || client?.phone || '',
@@ -562,21 +592,24 @@ export async function generateInvoicePdf(
 
   // 3. Items Table
   const rawItems = invoice.items && invoice.items.length > 0 ? invoice.items : null;
-  const items = rawItems || [{
-    name: invoice.description || 'Professional Services',
+  const items = (rawItems || [{
+    name: invoice.description || 'General Items',
     quantity: 1,
     unit: 'pcs',
     unit_price: invoice.amount || invoice.total || 0,
     total: invoice.amount || invoice.total || 0,
-  }];
+  }]).map((it: any) => ({
+    name: it.name || it.description || 'ITEM',
+    description: it.name && it.description && it.name !== it.description ? it.description : (it.name ? '' : it.description || ''),
+    quantity: Number(it.quantity) || 1,
+    unit: (it.unit && String(it.unit).trim()) || it.unit_name || 'pcs',
+    unit_price: Number(it.unit_price ?? it.unitPrice ?? it.rate ?? 0),
+    total: Number(it.total ?? ((Number(it.unit_price ?? it.unitPrice ?? it.rate ?? 0)) * (Number(it.quantity) || 1))),
+  }));
   const tableFinalY = drawItemsTable(doc, tableStartY, items);
 
   // 4. Calculations
-  const subtotal = Number(invoice.subtotal ?? items.reduce((a: number, i: any) => {
-    const price = Number(i.unit_price ?? i.unitPrice ?? i.rate ?? 0);
-    const qty = Number(i.quantity ?? 1);
-    return a + Number(i.total ?? (price * qty));
-  }, 0));
+  const subtotal = Number(invoice.subtotal ?? items.reduce((a: number, i: any) => a + Number(i.total), 0));
 
   const discountAmt = Number(invoice.discount_amount ?? invoice.discount ?? 0);
   const discountPercent = invoice.discount_percent ? Number(invoice.discount_percent) : undefined;
@@ -590,11 +623,12 @@ export async function generateInvoicePdf(
   let igstAmt = 0;
 
   if (isInterstate) {
-    igstAmt = Number(invoice.igst_amount ?? invoice.tax ?? (subAfterDiscount * taxRate / 100));
+    igstAmt = Number(invoice.igst_amount ?? invoice.tax_amount ?? invoice.tax ?? (subAfterDiscount * taxRate / 100));
   } else {
     const halfRate = taxRate / 2;
-    cgstAmt = Number(invoice.cgst_amount ?? (subAfterDiscount * halfRate / 100));
-    sgstAmt = Number(invoice.sgst_amount ?? (subAfterDiscount * halfRate / 100));
+    const defaultHalfTax = (invoice.tax_amount ?? invoice.tax) ? Number(invoice.tax_amount ?? invoice.tax) / 2 : (subAfterDiscount * halfRate / 100);
+    cgstAmt = Number(invoice.cgst_amount ?? defaultHalfTax);
+    sgstAmt = Number(invoice.sgst_amount ?? defaultHalfTax);
   }
 
   const grandTotal = Number(invoice.amount ?? invoice.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
@@ -620,7 +654,14 @@ export async function generateInvoicePdf(
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = invoice.notes || s.default_notes;
   const terms = invoice.terms || invoice.terms_and_conditions || s.default_terms;
-  await drawBankAndClosing(doc, s, headerMeta, notes, terms);
+  const customBank = {
+    bankHolder: invoice.custom_bank_holder || invoice.account_holder,
+    bankName: invoice.custom_bank_name || invoice.bank_name,
+    bankAcc: invoice.custom_bank_account || invoice.bank_account,
+    bankIfsc: invoice.custom_bank_ifsc || invoice.bank_ifsc,
+    upiId: invoice.custom_upi_id || invoice.upi_id,
+  };
+  await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 
   // 7. Footer across all pages
   addFooter(doc, s);
@@ -629,10 +670,15 @@ export async function generateInvoicePdf(
 }
 
 export async function generateQuotationPdf(
-  workspaceId: string,
-  quotation: any,
-  client: User | null = null
+  workspaceIdOrQuotation: string | any,
+  quotationOrClient?: any,
+  clientUser?: any
 ): Promise<jsPDF> {
+  const isFirstObj = typeof workspaceIdOrQuotation === 'object' && workspaceIdOrQuotation !== null;
+  const workspaceId = isFirstObj ? (workspaceIdOrQuotation.workspace_id || '') : (workspaceIdOrQuotation || '');
+  const quotation = isFirstObj ? workspaceIdOrQuotation : (quotationOrClient || {});
+  const client = isFirstObj ? (quotationOrClient || null) : (clientUser || null);
+
   const s = await getCompanySettings(workspaceId);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -654,7 +700,7 @@ export async function generateQuotationPdf(
   // 2. FROM & BILL TO / QUOTE TO
   const clientInfo: ClientInfo = {
     name: quotation.client_name || quotation.clientName || client?.full_name || client?.name || '',
-    company: quotation.client_company || quotation.clientCompany || '',
+    company: quotation.client_company || quotation.clientCompany || (client as any)?.company || client?.name || '',
     address: quotation.client_address || quotation.clientAddress || (client as any)?.address || '',
     email: quotation.client_email || quotation.clientEmail || client?.email || '',
     phone: quotation.client_phone || quotation.clientPhone || client?.phone || '',
@@ -664,21 +710,24 @@ export async function generateQuotationPdf(
 
   // 3. Items Table
   const rawItems = quotation.items && quotation.items.length > 0 ? quotation.items : null;
-  const items = rawItems || [{
+  const items = (rawItems || [{
     name: quotation.description || 'General Items',
     quantity: 1,
     unit: 'pcs',
     unit_price: quotation.amount || quotation.total || 0,
     total: quotation.amount || quotation.total || 0,
-  }];
+  }]).map((it: any) => ({
+    name: it.name || it.description || 'ITEM',
+    description: it.name && it.description && it.name !== it.description ? it.description : (it.name ? '' : it.description || ''),
+    quantity: Number(it.quantity) || 1,
+    unit: (it.unit && String(it.unit).trim()) || it.unit_name || 'pcs',
+    unit_price: Number(it.unit_price ?? it.unitPrice ?? it.rate ?? 0),
+    total: Number(it.total ?? ((Number(it.unit_price ?? it.unitPrice ?? it.rate ?? 0)) * (Number(it.quantity) || 1))),
+  }));
   const tableFinalY = drawItemsTable(doc, tableStartY, items);
 
   // 4. Calculations
-  const subtotal = Number(quotation.subtotal ?? items.reduce((a: number, i: any) => {
-    const price = Number(i.unit_price ?? i.unitPrice ?? i.rate ?? 0);
-    const qty = Number(i.quantity ?? 1);
-    return a + Number(i.total ?? (price * qty));
-  }, 0));
+  const subtotal = Number(quotation.subtotal ?? items.reduce((a: number, i: any) => a + Number(i.total), 0));
 
   const discountAmt = Number(quotation.discount_amount ?? quotation.discount ?? 0);
   const discountPercent = quotation.discount_percent ? Number(quotation.discount_percent) : undefined;
@@ -692,11 +741,12 @@ export async function generateQuotationPdf(
   let igstAmt = 0;
 
   if (isInterstate) {
-    igstAmt = Number(quotation.igst_amount ?? quotation.tax ?? (subAfterDiscount * taxRate / 100));
+    igstAmt = Number(quotation.igst_amount ?? quotation.tax_amount ?? quotation.tax ?? (subAfterDiscount * taxRate / 100));
   } else {
     const halfRate = taxRate / 2;
-    cgstAmt = Number(quotation.cgst_amount ?? (subAfterDiscount * halfRate / 100));
-    sgstAmt = Number(quotation.sgst_amount ?? (subAfterDiscount * halfRate / 100));
+    const defaultHalfTax = (quotation.tax_amount ?? quotation.tax) ? Number(quotation.tax_amount ?? quotation.tax) / 2 : (subAfterDiscount * halfRate / 100);
+    cgstAmt = Number(quotation.cgst_amount ?? defaultHalfTax);
+    sgstAmt = Number(quotation.sgst_amount ?? defaultHalfTax);
   }
 
   const grandTotal = Number(quotation.amount ?? quotation.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
@@ -718,7 +768,14 @@ export async function generateQuotationPdf(
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = quotation.notes || s.default_notes;
   const terms = quotation.terms || s.default_terms;
-  await drawBankAndClosing(doc, s, headerMeta, notes, terms);
+  const customBank = {
+    bankHolder: quotation.custom_bank_holder || quotation.account_holder,
+    bankName: quotation.custom_bank_name || quotation.bank_name,
+    bankAcc: quotation.custom_bank_account || quotation.bank_account,
+    bankIfsc: quotation.custom_bank_ifsc || quotation.bank_ifsc,
+    upiId: quotation.custom_upi_id || quotation.upi_id,
+  };
+  await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 
   // 7. Footer across all pages
   addFooter(doc, s);
@@ -727,10 +784,15 @@ export async function generateQuotationPdf(
 }
 
 export async function generateProformaInvoicePdf(
-  workspaceId: string,
-  proforma: any,
-  client: User | null = null
+  workspaceIdOrProforma: string | any,
+  proformaOrClient?: any,
+  clientUser?: any
 ): Promise<jsPDF> {
+  const isFirstObj = typeof workspaceIdOrProforma === 'object' && workspaceIdOrProforma !== null;
+  const workspaceId = isFirstObj ? (workspaceIdOrProforma.workspace_id || '') : (workspaceIdOrProforma || '');
+  const proforma = isFirstObj ? workspaceIdOrProforma : (proformaOrClient || {});
+  const client = isFirstObj ? (proformaOrClient || null) : (clientUser || null);
+
   const s = await getCompanySettings(workspaceId);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -752,7 +814,7 @@ export async function generateProformaInvoicePdf(
   // 2. FROM & BILL TO
   const clientInfo: ClientInfo = {
     name: proforma.clientName || proforma.client_name || client?.full_name || client?.name || '',
-    company: proforma.clientCompany || proforma.client_company || '',
+    company: proforma.clientCompany || proforma.client_company || (client as any)?.company || client?.name || '',
     address: proforma.clientAddress || proforma.client_address || (client as any)?.address || '',
     email: proforma.clientEmail || proforma.client_email || client?.email || '',
     phone: proforma.clientPhone || proforma.client_phone || client?.phone || '',
@@ -762,21 +824,24 @@ export async function generateProformaInvoicePdf(
 
   // 3. Items Table
   const rawItems = proforma.items && proforma.items.length > 0 ? proforma.items : null;
-  const items = rawItems || [{
+  const items = (rawItems || [{
     name: proforma.description || 'General Items',
     quantity: 1,
     unit: 'pcs',
     unit_price: proforma.total || proforma.amount || 0,
     total: proforma.total || proforma.amount || 0,
-  }];
+  }]).map((it: any) => ({
+    name: it.name || it.description || 'ITEM',
+    description: it.name && it.description && it.name !== it.description ? it.description : (it.name ? '' : it.description || ''),
+    quantity: Number(it.quantity) || 1,
+    unit: (it.unit && String(it.unit).trim()) || it.unit_name || 'pcs',
+    unit_price: Number(it.unitPrice ?? it.unit_price ?? it.rate ?? 0),
+    total: Number(it.total ?? ((Number(it.unitPrice ?? it.unit_price ?? it.rate ?? 0)) * (Number(it.quantity) || 1))),
+  }));
   const tableFinalY = drawItemsTable(doc, tableStartY, items);
 
   // 4. Calculations
-  const subtotal = Number(proforma.subtotal ?? items.reduce((a: number, i: any) => {
-    const price = Number(i.unitPrice ?? i.unit_price ?? i.rate ?? 0);
-    const qty = Number(i.quantity ?? 1);
-    return a + Number(i.total ?? (price * qty));
-  }, 0));
+  const subtotal = Number(proforma.subtotal ?? items.reduce((a: number, i: any) => a + Number(i.total), 0));
 
   const discountAmt = Number(proforma.discount_amount ?? proforma.discount ?? 0);
   const discountPercent = proforma.discount_percent ? Number(proforma.discount_percent) : undefined;
@@ -790,11 +855,12 @@ export async function generateProformaInvoicePdf(
   let igstAmt = 0;
 
   if (isInterstate) {
-    igstAmt = Number(proforma.igst_amount ?? proforma.tax ?? (subAfterDiscount * taxRate / 100));
+    igstAmt = Number(proforma.igst_amount ?? proforma.tax_amount ?? proforma.tax ?? (subAfterDiscount * taxRate / 100));
   } else {
     const halfRate = taxRate / 2;
-    cgstAmt = Number(proforma.cgst_amount ?? (subAfterDiscount * halfRate / 100));
-    sgstAmt = Number(proforma.sgst_amount ?? (subAfterDiscount * halfRate / 100));
+    const defaultHalfTax = (proforma.tax_amount ?? proforma.tax) ? Number(proforma.tax_amount ?? proforma.tax) / 2 : (subAfterDiscount * halfRate / 100);
+    cgstAmt = Number(proforma.cgst_amount ?? defaultHalfTax);
+    sgstAmt = Number(proforma.sgst_amount ?? defaultHalfTax);
   }
 
   const grandTotal = Number(proforma.amount ?? proforma.total ?? (subAfterDiscount + cgstAmt + sgstAmt + igstAmt));
@@ -816,7 +882,14 @@ export async function generateProformaInvoicePdf(
   // 6. Page 2: Dedicated Remittance Sheet with Bank Details & Closing
   const notes = proforma.notes || s.default_notes;
   const terms = proforma.terms || s.default_terms;
-  await drawBankAndClosing(doc, s, headerMeta, notes, terms);
+  const customBank = {
+    bankHolder: proforma.custom_bank_holder || proforma.account_holder,
+    bankName: proforma.custom_bank_name || proforma.bank_name,
+    bankAcc: proforma.custom_bank_account || proforma.bank_account,
+    bankIfsc: proforma.custom_bank_ifsc || proforma.bank_ifsc,
+    upiId: proforma.custom_upi_id || proforma.upi_id,
+  };
+  await drawBankAndClosing(doc, s, headerMeta, notes, terms, customBank);
 
   // 7. Footer across all pages
   addFooter(doc, s);
