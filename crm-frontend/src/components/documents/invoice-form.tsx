@@ -131,8 +131,8 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
 
   // Reserve the next atomic document number from Settings (new invoices only).
   useEffect(() => {
-    if (existingInvoice || !workspace?.id) return;
-    backend.nextNumber(workspace.id, 'invoice')
+    if (existingInvoice) return;
+    backend.nextNumber(workspace?.id || 'default', 'invoice')
       .then(({ number }: { number: string }) => setMeta((prev) => ({ ...prev, document_number: number })))
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +201,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
 
         let docNumber = meta.document_number;
         if (!existingInvoice && !docNumber) {
-          docNumber = (await backend.nextNumber(workspace?.id || '', 'invoice')).number;
+          docNumber = (await backend.nextNumber(workspace?.id || 'default', 'invoice')).number;
         }
 
         const invoiceData = {
@@ -249,7 +249,7 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           custom_bank_account: payment.custom_bank_account || '',
           custom_bank_ifsc: payment.custom_bank_ifsc || '',
           custom_upi_id: payment.custom_upi_id || '',
-          workspace_id: workspace?.id || '',
+          workspace_id: workspace?.id || 'default',
           items: items.map((item) => ({
             item_id: item.id,
             product_id: item.product_id,
@@ -268,13 +268,14 @@ export function InvoiceForm({ existingInvoice }: InvoiceFormProps) {
           await updateInvoice(existingInvoice.id, invoiceData);
           toast.success(finalStatus === 'pending' ? 'Invoice updated' : 'Invoice sent');
         } else {
-          await createInvoice(invoiceData);
+          const newId = await createInvoice(invoiceData);
+          if (!newId) throw new Error('Failed to create invoice');
           toast.success(finalStatus === 'pending' ? 'Invoice created' : 'Invoice created and sent');
         }
 
         router.push('/invoices');
-      } catch {
-        toast.error('Something went wrong');
+      } catch (err: any) {
+        toast.error(err?.message || 'Something went wrong');
       } finally {
         setSaving(false);
         setSending(false);

@@ -10,6 +10,7 @@ import {
   buildConvertQuotationToProformaUpdate,
   buildConvertProformaToInvoiceUpdate,
   calcTotals,
+  deepClean,
   deriveInvoiceStatus,
   fmtMoney,
   formatNumber,
@@ -205,6 +206,45 @@ check("unauthorized email rejected", !isEmailAllowed("stranger@example.com"));
 check("unauthorized role falls back safely", getUserRole("stranger@example.com") === "viewer");
 check("dynamic allowed user works", isEmailAllowed("newperson@lentone.com", { u1: { email: "newperson@lentone.com", role: "admin" } }));
 check("dynamic role resolved", getUserRole("newperson@lentone.com", { u1: { email: "newperson@lentone.com", role: "sales" } }) === "sales");
+
+// --- deepClean checks for Firebase persistence ---
+const rawNested = {
+  quotation_number: "QUO-2026-2134",
+  topUndefined: undefined,
+  amount: 0,
+  active: false,
+  emptyStr: "",
+  nullVal: null,
+  nested: {
+    valid: "ok",
+    nestedUndefined: undefined,
+  },
+  items: [
+    { name: "Item 1", product_id: undefined, quantity: 1, unitPrice: 50 },
+    { name: "Item 2", product_id: "p1", quantity: 2, unitPrice: 100 },
+  ],
+  arrayWithUndefined: [1, undefined, 2],
+};
+
+const cleaned = deepClean(rawNested);
+check("deepClean removes topUndefined", !("topUndefined" in cleaned));
+check("deepClean removes nestedUndefined", !("nestedUndefined" in (cleaned.nested as any)));
+check("deepClean removes product_id undefined from item 0", !("product_id" in (cleaned.items[0] as any)));
+check("deepClean preserves product_id on item 1", (cleaned.items[1] as any).product_id === "p1");
+check("deepClean preserves 0", cleaned.amount === 0);
+check("deepClean preserves false", cleaned.active === false);
+check("deepClean preserves empty string", cleaned.emptyStr === "");
+check("deepClean preserves null", cleaned.nullVal === null);
+check("deepClean removes undefined from primitive array", cleaned.arrayWithUndefined.length === 2 && cleaned.arrayWithUndefined[1] === 2);
+
+function containsAnyUndefined(val: any): boolean {
+  if (val === undefined) return true;
+  if (val === null) return false;
+  if (Array.isArray(val)) return val.some(containsAnyUndefined);
+  if (typeof val === "object") return Object.values(val).some(containsAnyUndefined);
+  return false;
+}
+check("cleaned payload has zero undefined properties anywhere", !containsAnyUndefined(cleaned));
 
 if (failures > 0) {
   console.error(`${failures} failure(s)`);

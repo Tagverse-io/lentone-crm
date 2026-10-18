@@ -121,8 +121,8 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
   // Reserve the next atomic document number from Settings (new quotes only).
   useEffect(() => {
-    if (existingQuote || !workspace?.id) return;
-    backend.nextNumber(workspace.id, 'quote')
+    if (existingQuote) return;
+    backend.nextNumber(workspace?.id || 'default', 'quote')
       .then(({ number }: { number: string }) => setMeta((prev) => ({ ...prev, document_number: number })))
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +152,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
 
         let docNumber = meta.document_number;
         if (!existingQuote && !docNumber) {
-          docNumber = (await backend.nextNumber(workspace?.id || '', 'quote')).number;
+          docNumber = (await backend.nextNumber(workspace?.id || 'default', 'quote')).number;
         }
 
         const quotationData = {
@@ -190,7 +190,7 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           terms: notes.terms,
           internal_notes: notes.internal_notes,
           delivery_timeline: notes.delivery_timeline,
-          workspace_id: workspace?.id || '',
+          workspace_id: workspace?.id || 'default',
           items: items.map((item) => ({
             item_id: item.id,
             product_id: item.product_id,
@@ -208,13 +208,14 @@ export function QuoteForm({ existingQuote }: QuoteFormProps) {
           await updateQuotation(existingQuote.id, quotationData);
           toast.success(finalStatus === 'draft' ? 'Quote updated' : 'Quote sent');
         } else {
-          await createQuotation(quotationData);
+          const newId = await createQuotation(quotationData);
+          if (!newId) throw new Error('Failed to create quotation');
           toast.success(finalStatus === 'draft' ? 'Quote created' : 'Quote created and sent');
         }
 
         router.push('/quotes');
-      } catch {
-        toast.error('Something went wrong');
+      } catch (err: any) {
+        toast.error(err?.message || 'Something went wrong');
       } finally {
         setSaving(false);
         setSending(false);

@@ -533,13 +533,26 @@ export function invoiceOutstanding(inv: { total: number; amountPaid?: number }):
   return Math.max(0, (Number(inv.total) || 0) - (Number(inv.amountPaid) || 0));
 }
 
-function clean<T extends object>(data: T): T {
-  const out = { ...data } as Record<string, unknown>;
-  for (const k of Object.keys(out)) {
-    if (out[k] === undefined) delete out[k];
+export function deepClean<T>(val: T): T {
+  if (val === null || val === undefined) return val;
+  if (Array.isArray(val)) {
+    return val
+      .filter((item) => item !== undefined)
+      .map((item) => deepClean(item)) as unknown as T;
   }
-  return out as T;
+  if (typeof val === "object" && !(val instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      if (v !== undefined) {
+        out[k] = deepClean(v);
+      }
+    }
+    return out as T;
+  }
+  return val;
 }
+
+export const clean = deepClean;
 
 function toList<T>(val: unknown): (T & { id: string })[] {
   if (!val || typeof val !== "object") return [];
@@ -561,6 +574,11 @@ export async function getCollection<T>(path: string): Promise<(T & { id: string 
 
 const countCache = new Map<string, { n: number; at: number }>();
 
+export function invalidateCountCache(path?: string): void {
+  if (path) countCache.delete(path);
+  else countCache.clear();
+}
+
 /** Collection size, cached 60s per path so polling tables stay cheap. */
 export async function getCount(path: string): Promise<number> {
   const c = countCache.get(path);
@@ -576,16 +594,18 @@ export async function createItem<T extends object>(path: string, data: T): Promi
   const db = getFirebaseDatabase();
   const r = push(ref(db, path));
   const stamp = nowIso();
-  await set(r, clean({ ...data, createdAt: stamp, updatedAt: stamp }));
+  await set(r, deepClean({ ...data, createdAt: stamp, updatedAt: stamp }));
+  invalidateCountCache(path);
   return r.key as string;
 }
 
 export async function updateItem(path: string, id: string, patch: Record<string, unknown>): Promise<void> {
-  await update(ref(getFirebaseDatabase(), `${path}/${id}`), clean({ ...patch, updatedAt: nowIso() }));
+  await update(ref(getFirebaseDatabase(), `${path}/${id}`), deepClean({ ...patch, updatedAt: nowIso() }));
 }
 
 export async function removeItem(path: string, id: string): Promise<void> {
   await remove(ref(getFirebaseDatabase(), `${path}/${id}`));
+  invalidateCountCache(path);
 }
 
 export async function getItem<T>(path: string, id: string): Promise<(T & { id: string }) | null> {

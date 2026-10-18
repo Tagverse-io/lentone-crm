@@ -153,7 +153,7 @@ export default function QuotesPage() {
         toast.success('Quotation updated');
       } else {
         const seq = await nextSequence('quotations');
-        const number = formatNumber(settings?.quotationPrefix ?? 'Q', seq);
+        const number = formatNumber(settings?.quotationPrefix ?? 'QUO', seq);
         const id = await createItem('quotations', { number, numberKey: number.toLowerCase(), ...data });
         await logHistory('quotations', id, 'Quotation created', `${number} · ${status}`);
         toast.success(`Quotation ${number} created`);
