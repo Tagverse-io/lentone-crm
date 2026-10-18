@@ -300,6 +300,35 @@ export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
   const kindLabel = isInvoice ? 'Invoice' : isProforma ? 'Proforma' : 'Quotation';
   const filename = `${kindLabel}-${opts.number || 'doc'}.pdf`;
 
+  const mapItem = (it: any) => {
+    const rawDesc = String(it.description || '').trim();
+    const rawName = String(it.name || '').trim();
+    let name = rawName;
+    let description = rawDesc;
+    if (!name && rawDesc) {
+      if (rawDesc.includes('\n')) {
+        const parts = rawDesc.split('\n');
+        name = parts[0];
+        description = parts.slice(1).join('\n');
+      } else if (rawDesc.includes(' - ')) {
+        const parts = rawDesc.split(' - ');
+        name = parts[0];
+        description = parts.slice(1).join(' - ');
+      } else {
+        name = rawDesc;
+      }
+    }
+    return {
+      name,
+      description,
+      quantity: it.quantity,
+      unit: it.unit || 'pcs',
+      unit_price: it.unitPrice ?? it.unit_price ?? 0,
+      unitPrice: it.unitPrice ?? it.unit_price ?? 0,
+      total: it.total,
+    };
+  };
+
   if (isProforma) {
     const doc = await generateProformaInvoicePdf('', {
       number: opts.number,
@@ -318,15 +347,7 @@ export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
       client_email: opts.clientEmail,
       clientPhone: opts.clientPhone,
       client_phone: opts.clientPhone,
-      items: opts.items.map((it: any) => ({
-        name: it.description || it.name || '',
-        description: it.description || '',
-        quantity: it.quantity,
-        unit: it.unit || 'pcs',
-        unit_price: it.unitPrice ?? it.unit_price ?? 0,
-        unitPrice: it.unitPrice ?? it.unit_price ?? 0,
-        total: it.total,
-      })),
+      items: opts.items.map(mapItem),
       subtotal: opts.subtotal,
       discount: opts.discount,
       discount_amount: opts.discount,
@@ -356,15 +377,7 @@ export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
       clientEmail: opts.clientEmail,
       client_phone: opts.clientPhone,
       clientPhone: opts.clientPhone,
-      items: opts.items.map((it: any) => ({
-        name: it.description || it.name || '',
-        description: it.description || '',
-        quantity: it.quantity,
-        unit: it.unit || 'pcs',
-        unit_price: it.unitPrice ?? it.unit_price ?? 0,
-        unitPrice: it.unitPrice ?? it.unit_price ?? 0,
-        total: it.total,
-      })),
+      items: opts.items.map(mapItem),
       subtotal: opts.subtotal,
       discount: opts.discount,
       discount_amount: opts.discount,
@@ -396,15 +409,7 @@ export async function exportDocumentPdf(opts: PdfDocOptions): Promise<void> {
       clientEmail: opts.clientEmail,
       client_phone: opts.clientPhone,
       clientPhone: opts.clientPhone,
-      items: opts.items.map((it: any) => ({
-        name: it.description || it.name || '',
-        description: it.description || '',
-        quantity: it.quantity,
-        unit: it.unit || 'pcs',
-        unit_price: it.unitPrice ?? it.unit_price ?? 0,
-        unitPrice: it.unitPrice ?? it.unit_price ?? 0,
-        total: it.total,
-      })),
+      items: opts.items.map(mapItem),
       subtotal: opts.subtotal,
       discount: opts.discount,
       discount_amount: opts.discount,

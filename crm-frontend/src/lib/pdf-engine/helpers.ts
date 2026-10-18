@@ -5,31 +5,32 @@ import { getSettings } from '@/lib/db';
 const DEFAULT_SETTINGS: CompanySettings = {
   company_name: 'Lentone Consumer Products',
   legal_name: 'Lentone Consumer Products',
-  tagline: 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
+  tagline: 'WHERE QUALITY MEETS CLEAN',
   address: 'Padur, Rajiv Gandhi Salai (OMR), Chennai – 603103',
-  phone: '+91 74489 98628',
-  email: 'aathishpirate@gmail.com',
-  website: '',
-  logo_url: '',
+  phone: '+91 6374580424',
+  email: 'lentonecp@gmail.com',
+  website: 'www.lentone.in',
+  logo_url: '/logo.png',
   footer_logo_url: '',
-  gst_number: '',
+  gst_number: '33OHMPS7204B1Z6',
   pan_number: '',
   registration_number: '',
-  bank_name: '',
-  bank_account: '',
-  bank_ifsc: '',
+  bank_name: 'IndusInd Bank',
+  bank_account: '256374580424',
+  bank_ifsc: 'INDB0000932',
+  bank_holder: 'Lentone',
   bank_swift: '',
   upi_id: '',
   qr_code_url: '',
-  primary_color: '#2563eb',
-  secondary_color: '#1e40af',
-  accent_color: '#f59e0b',
+  primary_color: '#C88A2C',
+  secondary_color: '#A06E23',
+  accent_color: '#F9EED9',
   default_currency: 'INR',
-  currency_symbol: '₹',
+  currency_symbol: 'Rs.',
   currency_position: 'before',
   currency_decimals: 2,
   number_format: '12,34,567.89',
-  date_format: 'dd/MM/yyyy',
+  date_format: 'DD/MM/YYYY',
   timezone: 'Asia/Kolkata',
   tax_cgst: 9,
   tax_sgst: 9,
@@ -38,13 +39,13 @@ const DEFAULT_SETTINGS: CompanySettings = {
   tax_tin: '',
   default_terms: '',
   default_notes: '',
-  footer_text: '',
+  footer_text: 'Lentone Consumer Products | www.lentone.in | lentonecp@gmail.com',
   watermark: '',
   invoice_prefix: 'INV',
-  quote_prefix: 'QTE',
+  quote_prefix: 'QUO',
   purchase_order_prefix: 'PO',
-  invoice_number_format: '{prefix}-{year}-{num}',
-  quote_number_format: '{prefix}-{year}-{num}',
+  invoice_number_format: '{prefix}-{num}',
+  quote_number_format: '{prefix}-{num}',
   template_style: 'modern',
   social_links: '',
   support_contact: '',
@@ -73,10 +74,10 @@ export async function getCompanySettings(workspaceId?: string): Promise<CompanyS
     // ignore
   }
 
-  const companyName = appSettings?.companyName || workspace?.general?.company_name || 'Lentone Consumer Products';
-  const primaryColor = appSettings?.primaryColor || workspace?.branding?.primary_color || '#2563eb';
-  const currencySymbol = appSettings?.currency || workspace?.general?.currency_symbol || '₹';
-  const defaultCurrency = currencySymbol === '₹' ? 'INR' : (currencySymbol || workspace?.general?.default_currency || 'INR');
+  const companyName = appSettings?.companyName || workspace?.general?.company_name || DEFAULT_SETTINGS.company_name;
+  const primaryColor = appSettings?.primaryColor || workspace?.branding?.primary_color || DEFAULT_SETTINGS.primary_color;
+  const currencySymbol = appSettings?.currency === '₹' ? 'Rs.' : (appSettings?.currency || workspace?.general?.currency_symbol || 'Rs.');
+  const defaultCurrency = currencySymbol === '₹' || currencySymbol === 'Rs.' ? 'INR' : (currencySymbol || workspace?.general?.default_currency || 'INR');
   const templateStyle = appSettings?.templateStyle || workspace?.branding?.template_style || 'modern';
   const taxRate = typeof appSettings?.taxRate === 'number' ? appSettings.taxRate : 18;
 
@@ -84,43 +85,44 @@ export async function getCompanySettings(workspaceId?: string): Promise<CompanyS
     ...DEFAULT_SETTINGS,
     company_name: companyName,
     legal_name: workspace?.general?.legal_name || companyName,
-    tagline: appSettings?.tagline || workspace?.general?.tagline || 'PREMIUM CLEANING AND HYGIENE SOLUTIONS',
-    address: appSettings?.address || workspace?.branding?.address || 'Padur, Rajiv Gandhi Salai (OMR), Chennai – 603103',
-    phone: appSettings?.companyPhone || workspace?.branding?.phone || '',
-    email: appSettings?.companyEmail || workspace?.branding?.email || '',
-    website: appSettings?.companyWebsite || workspace?.branding?.website || '',
-    logo_url: appSettings?.logo || workspace?.branding?.logo_url || '',
+    tagline: appSettings?.tagline || workspace?.general?.tagline || DEFAULT_SETTINGS.tagline,
+    address: appSettings?.address || workspace?.branding?.address || DEFAULT_SETTINGS.address,
+    phone: appSettings?.companyPhone || workspace?.branding?.phone || DEFAULT_SETTINGS.phone,
+    email: appSettings?.companyEmail || workspace?.branding?.email || DEFAULT_SETTINGS.email,
+    website: appSettings?.companyWebsite || workspace?.branding?.website || DEFAULT_SETTINGS.website,
+    logo_url: appSettings?.logo || workspace?.branding?.logo_url || DEFAULT_SETTINGS.logo_url,
     footer_logo_url: workspace?.branding?.footer_logo_url || '',
-    gst_number: appSettings?.gstin || workspace?.branding?.gst_number || '',
+    gst_number: appSettings?.gstin || workspace?.branding?.gst_number || DEFAULT_SETTINGS.gst_number,
     pan_number: workspace?.branding?.pan_number || '',
     registration_number: workspace?.branding?.registration_number || '',
-    bank_name: appSettings?.bankName || workspace?.branding?.bank_name || '',
-    bank_account: appSettings?.bankAccount || workspace?.branding?.bank_account || '',
-    bank_ifsc: appSettings?.bankIfsc || workspace?.branding?.bank_ifsc || '',
+    bank_name: appSettings?.bankName || workspace?.branding?.bank_name || DEFAULT_SETTINGS.bank_name,
+    bank_account: appSettings?.bankAccount || workspace?.branding?.bank_account || DEFAULT_SETTINGS.bank_account,
+    bank_ifsc: appSettings?.bankIfsc || workspace?.branding?.bank_ifsc || DEFAULT_SETTINGS.bank_ifsc,
+    bank_holder: appSettings?.bankHolder || DEFAULT_SETTINGS.bank_holder || 'Lentone',
     bank_swift: workspace?.branding?.bank_swift || '',
     upi_id: appSettings?.upiId || workspace?.branding?.upi_id || '',
     qr_code_url: workspace?.branding?.qr_code_url || '',
     primary_color: primaryColor,
-    secondary_color: workspace?.branding?.secondary_color || '#1e40af',
-    accent_color: workspace?.branding?.accent_color || '#f59e0b',
+    secondary_color: workspace?.branding?.secondary_color || DEFAULT_SETTINGS.secondary_color,
+    accent_color: workspace?.branding?.accent_color || DEFAULT_SETTINGS.accent_color,
     default_currency: defaultCurrency,
     currency_symbol: currencySymbol,
     currency_position: workspace?.general?.currency_position ?? 'before',
     currency_decimals: workspace?.general?.currency_decimals ?? 2,
-    number_format: workspace?.general?.number_format ?? (currencySymbol === '₹' || defaultCurrency === 'INR' ? '12,34,567.89' : '1,234.56'),
-    date_format: workspace?.branding?.date_format || 'dd/MM/yyyy',
+    number_format: workspace?.general?.number_format ?? '12,34,567.89',
+    date_format: workspace?.branding?.date_format || 'DD/MM/YYYY',
     timezone: workspace?.general?.timezone || 'Asia/Kolkata',
-    tax_cgst: workspace?.branding?.tax_cgst || taxRate / 2,
-    tax_sgst: workspace?.branding?.tax_sgst || taxRate / 2,
+    tax_cgst: workspace?.branding?.tax_cgst || (taxRate > 0 ? taxRate / 2 : 9),
+    tax_sgst: workspace?.branding?.tax_sgst || (taxRate > 0 ? taxRate / 2 : 9),
     tax_igst: workspace?.branding?.tax_igst || 0,
     tax_vat: workspace?.branding?.tax_vat || 0,
     tax_tin: workspace?.branding?.tax_tin || '',
     default_terms: appSettings?.defaultTerms || workspace?.branding?.default_terms || '',
     default_notes: appSettings?.defaultNotes || workspace?.branding?.default_notes || '',
-    footer_text: appSettings?.footerText || workspace?.branding?.footer_text || '',
+    footer_text: appSettings?.footerText || workspace?.branding?.footer_text || DEFAULT_SETTINGS.footer_text,
     watermark: workspace?.branding?.watermark || '',
     invoice_prefix: appSettings?.invoicePrefix || workspace?.branding?.invoice_prefix || 'INV',
-    quote_prefix: appSettings?.quotationPrefix || workspace?.branding?.quote_prefix || 'QTE',
+    quote_prefix: appSettings?.quotationPrefix || workspace?.branding?.quote_prefix || 'QUO',
     purchase_order_prefix: appSettings?.orderPrefix || workspace?.branding?.purchase_order_prefix || 'PO',
     invoice_number_format: workspace?.branding?.invoice_number_format || '{prefix}-{year}-{num}',
     quote_number_format: workspace?.branding?.quote_number_format || '{prefix}-{year}-{num}',
@@ -205,21 +207,32 @@ export function hexToRgb(hex: string): [number, number, number] {
 const logoCache = new Map<string, string>();
 
 export function getBase64ImageFromURL(url: string): Promise<string> {
+  if (!url) return Promise.reject(new Error('No url provided'));
+  if (url.startsWith('data:')) return Promise.resolve(url);
+
   const cached = logoCache.get(url);
   if (cached) return Promise.resolve(cached);
+
+  if (typeof Image === 'undefined') {
+    return Promise.reject(new Error('Image constructor not available (SSR)'));
+  }
 
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.setAttribute('crossOrigin', 'anonymous');
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0);
-      const dataUrl = canvas.toDataURL('image/png');
-      logoCache.set(url, dataUrl);
-      resolve(dataUrl);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        logoCache.set(url, dataUrl);
+        resolve(dataUrl);
+      } catch (err) {
+        reject(err);
+      }
     };
     img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
     img.src = url;

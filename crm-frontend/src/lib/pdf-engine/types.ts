@@ -17,6 +17,7 @@ export interface CompanySettings {
   bank_name: string;
   bank_account: string;
   bank_ifsc: string;
+  bank_holder?: string;
   bank_swift: string;
   upi_id: string;
   qr_code_url: string;
