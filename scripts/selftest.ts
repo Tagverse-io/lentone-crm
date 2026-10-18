@@ -17,6 +17,7 @@ import {
   invoiceOutstanding,
   isMapsUrl,
 } from "../src/lib/db";
+import { isEmailAllowed, getUserRole } from "../src/lib/auth-allowlist";
 
 let failures = 0;
 function check(name: string, cond: boolean, extra?: unknown) {
@@ -191,6 +192,19 @@ check("proforma -> invoice creates invoice", p2iPaths.some((p) => p.startsWith("
 check("proforma -> invoice marks proforma invoiced", proformaToInvBuilt?.updates?.[`proformaInvoices/${testProforma.id}/status`] === "Invoiced");
 check("proforma -> invoice deducts stock 10->8", proformaToInvBuilt?.updates?.["products/p1/stock"] === 8);
 check("proforma -> invoice records stock movement", p2iPaths.some((p) => p.startsWith("stockMovements/")));
+
+// --- auth allowlist checks ---
+check("developer aathishpirate allowed", isEmailAllowed("aathishpirate@gmail.com"));
+check("developer role matches", getUserRole("aathishpirate@gmail.com") === "developer");
+check("owner tagverse allowed", isEmailAllowed("tagverse.iio@gmail.com"));
+check("owner role matches", getUserRole("tagverse.iio@gmail.com") === "owner");
+check("admin lentone allowed", isEmailAllowed("lentonecp@gmail.com"));
+check("admin role matches", getUserRole("lentonecp@gmail.com") === "admin");
+check("case-insensitive & trimmed allowed", isEmailAllowed("  AaThIsHpIrAtE@gmail.com  "));
+check("unauthorized email rejected", !isEmailAllowed("stranger@example.com"));
+check("unauthorized role falls back safely", getUserRole("stranger@example.com") === "viewer");
+check("dynamic allowed user works", isEmailAllowed("newperson@lentone.com", { u1: { email: "newperson@lentone.com", role: "admin" } }));
+check("dynamic role resolved", getUserRole("newperson@lentone.com", { u1: { email: "newperson@lentone.com", role: "sales" } }) === "sales");
 
 if (failures > 0) {
   console.error(`${failures} failure(s)`);

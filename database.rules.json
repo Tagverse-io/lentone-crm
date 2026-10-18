@@ -43,6 +43,11 @@
         ".read": "auth != null",
         ".write": "auth != null"
       }
+    },
+    "allowedUsers": {
+      ".read": true,
+      ".write": "auth != null",
+      ".indexOn": ["email"]
     }
   }
 }

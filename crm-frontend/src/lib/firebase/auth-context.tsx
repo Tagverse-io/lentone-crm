@@ -20,6 +20,7 @@ import {
 import { ref, set, get } from 'firebase/database';
 import { getFirebaseAuth, getFirebaseDatabase } from '@/lib/firebase';
 import { brand } from '@/brand.config';
+import { isEmailAllowed, getUserRole, AllowedUserConfig } from '@/lib/auth-allowlist';
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('email');
@@ -73,6 +74,16 @@ function defaultWorkspace(): CrmWorkspace {
   return { id: 'default', name: brand.appName, setup_completed: true };
 }
 
+async function fetchAllowedUsers(): Promise<Record<string, AllowedUserConfig> | null> {
+  try {
+    const db = getFirebaseDatabase();
+    const snap = await get(ref(db, 'allowedUsers'));
+    return snap.exists() ? snap.val() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CrmUser | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
@@ -80,25 +91,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [workspace, setWorkspace] = useState<CrmWorkspace | null>(null);
 
   const loadProfile = useCallback(async (fbUser: FirebaseUser) => {
+    const dynamicUsers = await fetchAllowedUsers();
+    if (!isEmailAllowed(fbUser.email, dynamicUsers)) {
+      // Unauthorized user: kick them out immediately
+      await firebaseSignOut(getFirebaseAuth());
+      setUser(null);
+      setWorkspace(null);
+      return;
+    }
+
+    const assignedRole = getUserRole(fbUser.email, dynamicUsers);
     const fullName = fbUser.displayName ?? (fbUser.email ?? 'User').split('@')[0];
+
     // Best-effort profile mirror at /users/{uid} (rules allow authed users).
     try {
       const db = getFirebaseDatabase();
       const snap = await get(ref(db, `users/${fbUser.uid}`));
+      const now = new Date().toISOString();
       if (!snap.exists()) {
-        const now = new Date().toISOString();
         await set(ref(db, `users/${fbUser.uid}`), {
           email: fbUser.email ?? '',
           full_name: fullName,
-          role: 'admin',
+          role: assignedRole,
           created_at: now,
           updated_at: now,
         });
+      } else if (snap.val()?.role !== assignedRole) {
+        await set(ref(db, `users/${fbUser.uid}/role`), assignedRole);
       }
     } catch {
       // Non-fatal (offline / rules).
     }
-    setUser({ id: fbUser.uid, email: fbUser.email ?? '', full_name: fullName, role: 'admin' });
+    setUser({ id: fbUser.uid, email: fbUser.email ?? '', full_name: fullName, role: assignedRole });
     setWorkspace(defaultWorkspace());
   }, []);
 
@@ -121,6 +145,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const signIn = async (email: string, password: string): Promise<{ error: Error | null }> => {
+    const dynamicUsers = await fetchAllowedUsers();
+    if (!isEmailAllowed(email, dynamicUsers)) {
+      return { error: new Error('Access denied: this email is not authorized to sign in.') };
+    }
     try {
       await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
       return { error: null };
@@ -131,7 +159,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<{ error: Error | null }> => {
     try {
-      await signInWithPopup(getFirebaseAuth(), googleProvider);
+      const cred = await signInWithPopup(getFirebaseAuth(), googleProvider);
+      const userEmail = cred.user.email;
+      const dynamicUsers = await fetchAllowedUsers();
+      if (!isEmailAllowed(userEmail, dynamicUsers)) {
+        await firebaseSignOut(getFirebaseAuth());
+        return {
+          error: new Error(`Access denied: Google account (${userEmail || 'unknown'}) is not authorized to access this CRM.`),
+        };
+      }
       return { error: null };
     } catch (e) {
       return { error: e instanceof Error ? e : new Error('Google sign-in failed') };
@@ -139,6 +175,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string): Promise<{ error: Error | null; hasInvites?: boolean }> => {
+    const dynamicUsers = await fetchAllowedUsers();
+    if (!isEmailAllowed(email, dynamicUsers)) {
+      return { error: new Error('Access denied: registration is restricted to authorized personnel only.') };
+    }
     try {
       const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
       try {
@@ -191,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         firebaseUser,
         loading,
         workspace,
-        workspaceRole: user ? 'admin' : null,
+        workspaceRole: user ? user.role : null,
         workspaceLoading: false,
         signIn,
         signInWithGoogle,
