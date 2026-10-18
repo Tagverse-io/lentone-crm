@@ -17,13 +17,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Download, ExternalLink, Eye, FileCheck, FileText, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, Eye, FileCheck, FileSpreadsheet, FileText, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   QUOTATION_STATUSES,
   calcTotals,
   collectionQuery,
   convertQuotationAtomic,
+  convertQuotationToProformaAtomic,
   createItem,
   filterEqual,
   fmtMoney,
@@ -192,6 +193,22 @@ export default function QuotesPage() {
       setRefreshKey((k) => k + 1);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Conversion failed');
+    } finally {
+      setConverting(null);
+    }
+  };
+
+  const convertToProforma = async (q: Quotation) => {
+    if (!window.confirm(`Convert quotation ${q.number} to a Proforma Invoice?`)) return;
+    setConverting(q.id);
+    try {
+      const pSeq = await nextSequence('proformaInvoices');
+      const proformaNumber = formatNumber(settings?.proformaPrefix ?? 'PI', pSeq);
+      await convertQuotationToProformaAtomic(q, { proformaNumber });
+      toast.success(`Created Proforma Invoice ${proformaNumber}`);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Conversion to proforma failed');
     } finally {
       setConverting(null);
     }
@@ -369,6 +386,12 @@ export default function QuotesPage() {
                     <Download className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span>Download PDF</span>
                   </DropdownMenuItem>
+                  {!q.proformaInvoiceId && (
+                    <DropdownMenuItem onClick={() => convertToProforma(q)} disabled={converting === q.id}>
+                      <FileSpreadsheet className="h-4 w-4 mr-2 text-blue-600" />
+                      <span className="text-blue-600 font-medium">Convert to Proforma</span>
+                    </DropdownMenuItem>
+                  )}
                   {!q.orderId && !q.invoiceId && (
                     <DropdownMenuItem onClick={() => convert(q)} disabled={converting === q.id}>
                       <FileCheck className="h-4 w-4 mr-2 text-emerald-600" />

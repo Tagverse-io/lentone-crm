@@ -379,6 +379,7 @@ export interface AppSettings {
   currency: string; // symbol, e.g. ₹
   invoicePrefix: string;
   quotationPrefix: string;
+  proformaPrefix: string;
   orderPrefix: string;
   defaultRowsPerPage: number;
   defaultTaskSlot: string; // "HH:MM"
@@ -408,7 +409,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   taxRate: 18,
   currency: "₹",
   invoicePrefix: "INV",
-  quotationPrefix: "Q",
+  quotationPrefix: "QUO",
+  proformaPrefix: "PI",
   orderPrefix: "ORD",
   defaultRowsPerPage: 25,
   defaultTaskSlot: "10:00",

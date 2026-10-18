@@ -433,6 +433,7 @@ export async function exportSimplePdf(
     currency: '₹',
     invoicePrefix: 'INV',
     quotationPrefix: 'Q',
+    proformaPrefix: 'PI',
     orderPrefix: 'ORD',
     defaultRowsPerPage: 25,
     defaultTaskSlot: '10:00',
@@ -443,7 +444,11 @@ export async function exportSimplePdf(
     customFields: { clients: [], leads: [], products: [] },
   };
   await exportDocumentPdf({
-    kind: (title ?? '').toLowerCase().includes('invoice') ? 'INVOICE' : 'QUOTATION',
+    kind: (title ?? '').toLowerCase().includes('proforma')
+      ? 'PROFORMA'
+      : (title ?? '').toLowerCase().includes('invoice')
+        ? 'INVOICE'
+        : 'QUOTATION',
     settings: optsSettings ?? defaultSettings,
     clientName,
     ...rest,

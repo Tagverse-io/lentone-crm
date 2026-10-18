@@ -21,6 +21,7 @@ import {
   Users,
   Target,
   FileText,
+  FileSpreadsheet,
   Receipt,
   Settings,
   ChevronLeft,
@@ -71,6 +72,7 @@ function getNavConfig(openLeadCount: number): { topItems: NavItem[]; groups: Nav
         title: 'Revenue',
         items: [
           { title: 'Quotations', href: '/quotes', icon: FileText },
+          { title: 'Proforma Invoices', href: '/proforma-invoices', icon: FileSpreadsheet },
           { title: 'Invoices', href: '/invoices', icon: Receipt },
           { title: 'Payments', href: '/payments', icon: Wallet },
           { title: 'Finance', href: '/finance', icon: BarChart3 },
