@@ -659,10 +659,24 @@ export async function getHistory(entity: string, id: string): Promise<HistoryEnt
 
 // ----- Counters → auto-numbering (INV-2026-0007 style) -----
 
+export const COUNTER_MINIMUMS: Record<string, number> = {
+  invoices: 751,
+  quotations: 2134,
+  proformaInvoices: 1546,
+};
+
+export function computeNextSequence(current: number | null | undefined, name: string): number {
+  const min = COUNTER_MINIMUMS[name] ?? 1;
+  if (typeof current !== "number" || current < min) {
+    return min;
+  }
+  return current + 1;
+}
+
 export async function nextSequence(name: string): Promise<number> {
   const db = getFirebaseDatabase();
-  const res = await runTransaction(ref(db, `counters/${name}`), (cur) => (typeof cur === "number" ? cur + 1 : 1));
-  return (res.snapshot.val() as number) ?? 1;
+  const res = await runTransaction(ref(db, `counters/${name}`), (cur) => computeNextSequence(cur, name));
+  return (res.snapshot.val() as number) ?? (COUNTER_MINIMUMS[name] ?? 1);
 }
 
 export function formatNumber(prefix: string, seq: number, year = new Date().getFullYear()): string {

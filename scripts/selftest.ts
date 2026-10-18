@@ -4,6 +4,8 @@
  * Exits non-zero on the first failure.
  */
 import {
+  COUNTER_MINIMUMS,
+  computeNextSequence,
   buildAssignWorkUpdate,
   calcTotals,
   deriveInvoiceStatus,
@@ -54,6 +56,21 @@ check("overdue", deriveInvoiceStatus({ total: 100, amountPaid: 0, dueDate: "2020
 check("outstanding", invoiceOutstanding({ total: 100, amountPaid: 30 }) === 70);
 check("money format", fmtMoney(123456) === "₹1,23,456");
 check("number format", formatNumber("INV", 7, 2026) === "INV-2026-0007");
+
+// --- counter minimum thresholds ---
+check("counter min invoices", COUNTER_MINIMUMS?.invoices === 751);
+check("counter min quotations", COUNTER_MINIMUMS?.quotations === 2134);
+check("counter min proformaInvoices", COUNTER_MINIMUMS?.proformaInvoices === 1546);
+
+check("fresh invoice counter starts at 751", computeNextSequence?.(null, "invoices") === 751);
+check("fresh quote counter starts at 2134", computeNextSequence?.(undefined, "quotations") === 2134);
+check("fresh proforma counter starts at 1546", computeNextSequence?.(0, "proformaInvoices") === 1546);
+check("existing counter below min elevates to min", computeNextSequence?.(300, "invoices") === 751);
+check("existing counter at 751 increments to 752", computeNextSequence?.(751, "invoices") === 752);
+
+check("invoice formatted 751", formatNumber("INV", 751, 2026) === "INV-2026-0751");
+check("quote formatted 2134", formatNumber("QUO", 2134, 2026) === "QUO-2026-2134");
+check("proforma formatted 1546", formatNumber("PI", 1546, 2026) === "PI-2026-1546");
 
 // --- assign-work atomic builder ---
 const products = [
